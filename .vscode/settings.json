@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "stdio.h": "c",
+        "*.i": "c",
+        "co_enumerable.h": "c"
+    }
+}
