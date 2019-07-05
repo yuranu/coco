@@ -5,6 +5,7 @@
             "name": "(gdb) Launch - WSL",
             "type": "cppdbg",
             "request": "launch",
+            "preLaunchTask": "Make",
             "program": "build/debug/demo",
             "args": [
                 ""

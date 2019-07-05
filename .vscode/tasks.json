@@ -12,7 +12,7 @@
     },
     "tasks": [
         {
-            "label": "Make on WSL",
+            "label": "Make",
             "type": "shell",
             "command": "make",
             "args": [],
