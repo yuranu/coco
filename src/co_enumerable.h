@@ -1,8 +1,8 @@
 #ifndef CO_ENUMERABLE_H
 #define CO_ENUMERABLE_H
 
-#include "co_dispatcher.h"
 #include "sys/co_alloc.h"
+#include "sys/co_threads.h"
 #include "utils/co_macro.h"
 
 /**
@@ -11,9 +11,43 @@
 typedef enum co_retval {
     CO_RETVAL_TERM /** Terminated, no return value */,
     CO_RETVAL_RETURN /** Yielded, with return value */,
+    CO_RETVAL_DELAY /** Yielded, with delayed return value */
 } co_retval_t;
 
 #define __CO_ZERO_STATE 0
+
+/**
+ * Coroutines dispatcher descriptor, exposed to the coroutines.
+ * Shall be one object per dispatcher thread.
+ */
+typedef struct co_dispatcher {
+    /**
+     * Each coroutine waiting to be execute rings the bell.
+     * Each coroutine that returns with CO_RETVAL_DELAY is moved to
+     * pending queue. As soon as it finally has the result, it rings the bell.
+     */
+    co_sem_define(bell);
+
+    /**
+     * Trigger for dispatcher to terminate
+     */
+    volatile int term;
+} co_dispatcher_t;
+
+/**
+ * Notify dispatcher about some sort of event
+ */
+#define co_ring_the_bell(dispatch)
+
+/**
+ * Coroutine descriptor
+ */
+typedef struct __co_decriptor {
+    co_dispatcher_t *dispatch;
+    co_retval_t (*func)(void *);
+    int state;
+    int rv_ready;
+} __co_decriptor_t;
 
 #define __co_ctx_typename(fname) __co_ctx_##fname##_t
 
@@ -26,7 +60,7 @@ typedef enum co_retval {
         retval rv;                                                                                                     \
     } __co_ctx_typename(fname)
 
-#define __co_enumerable_proto(fname) co_retval_t fname(__co_ctx_typename(fname) * ctx)
+#define __co_enumerable_proto(fname) co_retval_t fname(void *__ctx)
 
 /**
  * Declare coroutine
@@ -43,6 +77,7 @@ typedef enum co_retval {
  */
 #define co_enumerable(fname)                                                                                           \
     __co_enumerable_proto(fname) {                                                                                     \
+        __co_ctx_typename(fname) *ctx = (__co_ctx_typename(fname) *)__ctx;                                             \
         switch (ctx->__co_sys.state) {
 
 /**

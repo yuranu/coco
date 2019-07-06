@@ -9,6 +9,7 @@ MAKEFLAGS += --no-builtin-variables
 # Compiler
 
 CONFIG := debug
+THREADS_CONFIG := pthread
 
 CC := clang
 ifeq (, $(shell which clang 2> /dev/null))
@@ -48,6 +49,11 @@ endif
 
 ifeq (release,$(CONFIG))
   CFLAGS += -O3
+endif
+
+ifeq (pthread, $(THREADS_CONFIG))
+  CFLAGS += -DCO_THREADS_PTHREAD
+  LDFLAGS += -pthread
 endif
 
 # Targets
