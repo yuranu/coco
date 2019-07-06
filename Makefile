@@ -16,8 +16,6 @@ ifeq (, $(shell which clang 2> /dev/null))
 endif
 
 # Macros
-MKDIR = $(TRACE)mkdir -p $(shell dirname $@)
-MKDEPDIR = $(TRACE)mkdir -p $(shell dirname $(DEP_DIR)/$*)
 
 TRACE = @echo '> $@';
 
@@ -31,7 +29,7 @@ OBJ := ${SRC:.c=.o}
 DEP := ${SRC:.c=.d}
 OUT := demo
 
-CFLAGS := -std=c89 -Wall -Werror
+CFLAGS := -ansi -Wall -Werror
 LDFLAGS :=
 INCLUDES :=
 
@@ -60,7 +58,7 @@ $(MAKE_DIRS):
 $(OUT_DIR)/$(OUT): $(OBJ_DIR)/$(OBJ)
 	$(TRACE)$(CC) $(LDFLAGS) $^ -o $@
 
-$(OBJ_DIR)/%.o: %.c | $(MAKE_DIRS)
+$(OBJ_DIR)/%.o: %.c Makefile | $(MAKE_DIRS)
 	$(TRACE)$(CC) $(AUTODEP) $(INCLUDES) $(CFLAGS) -c $< -o $@
 
 all: $(OUT_DIR)/$(OUT)

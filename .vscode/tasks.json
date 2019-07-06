@@ -16,10 +16,20 @@
             "type": "shell",
             "command": "make",
             "args": [],
+            "problemMatcher": "$gcc",
             "group": {
                 "kind": "build",
                 "isDefault": true
             }
+        },
+        {
+            "label": "Clean",
+            "type": "shell",
+            "command": "make",
+            "args": [
+                "clean"
+            ],
+            "problemMatcher": []
         }
     ]
 }
