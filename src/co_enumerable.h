@@ -11,7 +11,8 @@
 typedef enum co_retval {
     CO_RETVAL_TERM /** Terminated, no return value */,
     CO_RETVAL_RETURN /** Yielded, with return value */,
-    CO_RETVAL_DELAY /** Yielded, with delayed return value */
+    CO_RETVAL_DELAY /** Yielded, with delayed return value */,
+    CO_RETVAL_ERROR /** Error while creating new coroutine */
 } co_retval_t;
 
 #define __CO_ZERO_STATE 0
@@ -37,7 +38,7 @@ typedef struct co_dispatcher {
 /**
  * Notify dispatcher about some sort of event
  */
-#define co_ring_the_bell(dispatch)
+#define co_ring_the_bell(dispatch) co_sem_up((dispatch)->bell)
 
 /**
  * Coroutine descriptor
@@ -59,6 +60,13 @@ typedef struct __co_decriptor {
         } in;                                                                                                          \
         retval rv;                                                                                                     \
     } __co_ctx_typename(fname)
+
+#define __co_init_ctx(fname, disp, ...)                                                                                \
+    (__co_ctx_typename(fname)){.__co_sys.dispatch = disp,                                                              \
+                               .__co_sys.func = fname,                                                                 \
+                               .__co_sys.state = __CO_ZERO_STATE,                                                      \
+                               .__co_sys.rv_ready = 0,                                                                 \
+                               .in = {__VA_ARGS__}};
 
 #define __co_enumerable_proto(fname) co_retval_t fname(void *__ctx)
 

@@ -1,16 +1,20 @@
 
 #include "co_dispatcher.h"
 #include "co_enumerable.h"
+#include "utils/co_macro.h"
 
 #include <stdio.h>
 
-/**
- * container_of macro, same is in kernel, is used for co_queue implementation
- * If it is not defined, define it.
- */
-#ifndef container_of
-#define container_of(ptr, type, member) ((type *)((void *)ptr - (&((type *)0)->member)))
-#endif
+co_enumerable_decl(int, co_main);
+co_enumerable(co_main) {
+    co_enumerable_start();
+    printf("I am about to yield\n");
+    co_yield_return(10);
+    printf("I yielded\n");
+    co_yield_return(9);
+    printf("Don't expect return now\n");
+}
+co_enumerable_end();
 
 /**
  * TODO: Writing this here while WIP, final version shall be inside
@@ -26,6 +30,12 @@ int co_root_routine() {
     if (co_sem_init(ctx.dispatch.bell))
         goto __co_free_pd_q;
 
+    if (co_queue_enq(container_of((&ctx.dispatch), __co_dispatcher_ctx_t, dispatch)->ex_q, NULL))
+        return 1;
+
+    if (__co_start_coroutine(&ctx.dispatch, co_main))
+        goto __co_free_bell;
+
     __co_error = 0;
     while (!ctx.dispatch.term) {
         /* Dispatch loop */
@@ -35,13 +45,14 @@ int co_root_routine() {
             co_retval_t rv = descr->func(descr);
             if (rv == CO_RETVAL_DELAY) {
                 /* Delayed return. Move this coroutine to ex_q */
+                co_queue_deq(ctx.ex_q);
                 co_queue_enq(ctx.pd_q, descr);
             } else if (rv == CO_RETVAL_TERM) {
                 /* This coroutine is over */
-                
+                co_queue_deq(ctx.ex_q);
+                co_ctx_free(descr);
+                co_sem_down(ctx.dispatch.bell);
             }
-
-            co_sem_down(ctx.dispatch.bell);
             continue;
         }
         /* Second, check the pd_q */
@@ -56,14 +67,14 @@ int co_root_routine() {
                     co_sem_down(ctx.dispatch.bell);
                     break;
                 } else {
+                    /** Just put it back */
                     co_queue_enq(ctx.pd_q, descr);
                 }
             }
         }
-        break; /*No more coroutines. This branch is over.*/
+        break; /* No more coroutines. This branch is over. */
     }
 
-    goto __co_free_bell;
 /*__co_free_queues:*/
 __co_free_bell:
     co_sem_destroy(ctx.dispatch.bell);
@@ -92,8 +103,10 @@ co_enumerable(test) {
 co_enumerable_end();
 
 int main() {
-    int i;
+    printf("Test\n");
+    co_root_routine();
+    /*int i;
     co_foreach(i, test, 5, 15) { printf("Coroutine returned %d\n", i); }
     co_foreach_end();
-    return 0;
+    return 0;*/
 }

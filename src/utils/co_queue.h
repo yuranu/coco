@@ -29,14 +29,16 @@
 
 #define co_queue_enq(qu, e)                                                                                            \
     ({                                                                                                                 \
+        int __err_ = 0;                                                                                                \
         if (qu.sz < qu.cap) {                                                                                          \
             ++qu.sz;                                                                                                   \
             if (++qu.next >= qu.cap)                                                                                   \
                 qu.next = 0;                                                                                           \
             qu.q[qu.next] = e;                                                                                         \
-            0;                                                                                                         \
-        } else                                                                                                         \
-            -1;                                                                                                        \
+        } else {                                                                                                       \
+            __err_ = -1;                                                                                               \
+        }                                                                                                              \
+        __err_;                                                                                                        \
     })
 
 #define co_queue_deq(qu)                                                                                               \
