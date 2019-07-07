@@ -16,16 +16,17 @@ ifeq (, $(shell which clang 2> /dev/null))
   CC := gcc
 endif
 
-# Macros
-
 TRACE = @echo '> $@';
+
+# Macros
 
 BUILD_DIR := build
 DEP_DIR := $(BUILD_DIR)/dep
 OBJ_DIR := $(BUILD_DIR)/obj
 OUT_DIR := $(BUILD_DIR)/$(CONFIG)
 
-SRC := $(shell find src/ -name '*.c')
+#SRC := $(shell find src/ -name '*.c')
+SRC := src/co_multi_queue.c
 OBJ := ${SRC:.c=.o}
 DEP := ${SRC:.c=.d}
 OUT := demo

@@ -6,46 +6,48 @@
 
 #define co_queue_define(name, type)                                                                                    \
     struct {                                                                                                           \
-        type **q;                                                                                                      \
+        type *q;                                                                                                       \
         int cap;                                                                                                       \
-        int sz;                                                                                                        \
-        int next;                                                                                                      \
+        int head;                                                                                                      \
+        int tail;                                                                                                      \
     } name
 
 #define co_queue_init(qu, capacity)                                                                                    \
     ({                                                                                                                 \
         qu.cap = capacity;                                                                                             \
-        qu.sz;                                                                                                         \
-        qu.next = qu.cap - 1;                                                                                          \
+        qu.head = qu.tail = 0;                                                                                         \
         qu.q = co_mem_alloc(qu.cap * sizeof(qu.q));                                                                    \
-        qu.q ? 0 : -1;                                                                                                 \
+        qu.q ? 0 : -ENOMEM;                                                                                            \
     })
 
 #define co_queue_destroy(qu) free(qu.q)
 
-#define co_queue_empty(qu) (!qu.sz)
+#define co_queue_empty(qu) (qu.head == qu.tail)
 
-#define co_queue_peek(qu) (qu.q[qu.next])
+#define co_queue_peek(qu) (qu.q[qu.head])
 
 #define co_queue_enq(qu, e)                                                                                            \
     ({                                                                                                                 \
         int __err_ = 0;                                                                                                \
-        if (qu.sz < qu.cap) {                                                                                          \
-            ++qu.sz;                                                                                                   \
-            if (++qu.next >= qu.cap)                                                                                   \
-                qu.next = 0;                                                                                           \
-            qu.q[qu.next] = e;                                                                                         \
+        int __newtail_ = qu.tail + 1;                                                                                  \
+        if (__newtail_ >= qu.cap)                                                                                      \
+            __newtail_ = 0;                                                                                            \
+        if (__newtail_ != qu.head) {                                                                                   \
+            qu.q[qu.tail] = e;                                                                                         \
+            qu.tail = __newtail_;                                                                                      \
         } else {                                                                                                       \
-            __err_ = -1;                                                                                               \
+            --qu.tail;                                                                                                 \
+            __err_ = -ENOMEM;                                                                                          \
         }                                                                                                              \
         __err_;                                                                                                        \
     })
 
+/* Warning: no validaiton that queue is not empty */
 #define co_queue_deq(qu)                                                                                               \
     ({                                                                                                                 \
-        --qu.sz;                                                                                                       \
-        if (--qu.next < 0)                                                                                             \
-            qu.next = qu.cap - 1;                                                                                      \
+        ++qu.head;                                                                                                     \
+        if (qu.head >= qu.cap)                                                                                       \
+            qu.head = 0;                                                                                               \
     })
 
 #define co_queue_elem_at(qu, at) qu.q[(qu.next + at) < qu.cap ? (qu.next + at) : (qu.next + at - qu.cap)]
