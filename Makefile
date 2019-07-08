@@ -26,12 +26,12 @@ OBJ_DIR := $(BUILD_DIR)/obj
 OUT_DIR := $(BUILD_DIR)/$(CONFIG)
 
 #SRC := $(shell find src/ -name '*.c')
-SRC := src/co_multi_queue.c
+SRC := src/co_multi_wq.c
 OBJ := ${SRC:.c=.o}
 DEP := ${SRC:.c=.d}
 OUT := demo
 
-CFLAGS := -ansi -Wall -Werror
+CFLAGS := -std=gnu89 -Wall -Werror
 LDFLAGS :=
 INCLUDES :=
 
