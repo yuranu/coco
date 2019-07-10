@@ -1,6 +1,8 @@
 #ifndef UTILS__CO_MACRO_H
 #define UTILS__CO_MACRO_H
 
+#define co_sizeof_array(a) sizeof(a)
+
 #define container_of(ptr, type, member) ((type *)((void *)ptr - (void *)&((type *)0)->member))
 
 #define __co_list_c(...) __co_cat_2(__co_list_c_, __co_narg(__VA_ARGS__))(__VA_ARGS__)

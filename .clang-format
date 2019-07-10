@@ -4,6 +4,6 @@ ColumnLimit: '120'
 IndentCaseLabels: 'true'
 IndentWidth: '4'
 TabWidth: '4'
-UseTab: Never
+UseTab: Always
 
 ...
