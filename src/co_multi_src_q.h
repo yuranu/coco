@@ -28,45 +28,10 @@
  */
 
 #include "dep/co_atomics.h"
+#include "dep/co_queue.h"
+#include "dep/co_threads.h"
 #include "dep/co_types.h"
 #include "utils/co_macro.h"
-
-struct co_queu_e;
-/**
- * Queue element
- */
-typedef struct co_queu_e {
-	struct co_queu_e *next;
-} co_queue_e_t;
-
-/**
- * Queue
- */
-typedef struct co_queu {
-	struct co_queu_e *head, *tail;
-} co_queue_t;
-
-#define co_queue_init()                                                                                                \
-	(co_queue_t) { NULL, NULL }
-
-static __inline__ co_bool_t co_q_empty(co_queue_t *q) { return q->head == NULL; }
-
-static __inline__ void co_q_enq(co_queue_t *q, co_queue_e_t *elem) {
-	q->tail->next = elem;
-	q->tail = elem;
-}
-
-static __inline__ void co_q_deq(co_queue_t *q) { q->head = q->head->next; }
-
-static __inline__ co_queue_e_t *co_queue_peek(co_queue_t *q) { return q->head; }
-
-static __inline__ void co_q_enq_q(co_queue_t *dst, co_queue_t *src) {
-	dst->tail->next = src->head;
-	dst->tail = src->tail;
-	*src = co_queue_init();
-}
-
-#define co_queue_for_each(var, q) for ((var) = (q)->head; (var) != (q)->tail->next; (var) = (var)->next)
 
 #if defined(CO_MULTI_SRC_Q_N) && CO_MULTI_SRC_Q_N > 0
 #define CO_MULTI_SRC_STATIC_SIZED
@@ -95,7 +60,7 @@ typedef struct co_multi_src_q {
  * Initialize multi source queue
  * @param q Output queue
  * @param size Number of iqs to allocate. Ignored if static sized.
- * @return 0 or errno
+ * @return 0 or error code
  */
 co_errno_t co_multi_src_q_init(co_multi_src_q_t *q, co_size_t size) {
 #ifndef CO_MULTI_SRC_STATIC_SIZED
@@ -150,6 +115,27 @@ static __inline__ co_queue_e_t *co_multi_src_q_peek(co_multi_src_q_t *q) {
 static __inline__ void co_multi_src_q_deq(co_multi_src_q_t *q) {
 	/* No much logic - delegate work to mq */
 	return co_q_deq(&q->mq);
+}
+
+/**
+ * Equeue an element to the tail
+ * @param q Multi source queue pointer
+ * @param e Queue element
+ * @return 0 or error code
+ */
+static __inline__ co_errno_t co_multi_src_q_enq(co_multi_src_q_t *q, co_queue_e_t *e) {
+	/* First aquire some lock */
+	int i;
+	for (i = 0; i < co_multi_src_q_sz(q); ++i) { /* Try aquire each mq */
+		if (!co_atom_xchg(&q->locks[q->iqi], 1)) {
+			/* Aquired one, great */
+			co_q_enq(&q->iqs[q->iqi], e); /* Simply put it */
+			/* Unlock iq */
+			co_atom_xchg_unlock(&q->locks[q->iqi]);
+			return 0; /* Done */
+		}
+	}
+	return -EAGAIN; /* Could not aquire iq. Very low probability, but still. Can try again. */
 }
 
 #endif /*CO_MULTI_SRC_WQ_H*/

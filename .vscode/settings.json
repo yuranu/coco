@@ -4,5 +4,5 @@
         "*.h": "c",
         "*.i": "c",
     },
-    "terminal.integrated.shell.windows": "C:\\Windows\\System32\\WSL.exe"
+    "terminal.integrated.shell.windows": "C:\\Windows\\System32\\wsl.exe"
 }

@@ -3,9 +3,9 @@
     "windows": {
         "options": {
             "shell": {
-                "executable": "c:\\windows\\sysnative\\bash.exe",
+                "executable": "c:\\windows\\system32\\wsl.exe",
                 "args": [
-                    "-c"
+                    "-e"
                 ]
             }
         }

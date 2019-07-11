@@ -6,24 +6,23 @@
             "type": "cppdbg",
             "request": "launch",
             "preLaunchTask": "Make",
-            "program": "build/debug/demo",
+            "program": "${input:exe}",
             "args": [
                 ""
             ],
             "stopAtEntry": true,
             "environment": [],
-            "externalConsole": true,
             "windows": {
                 "MIMode": "gdb",
                 "miDebuggerPath": "/usr/bin/gdb",
+                "externalConsole": false,
                 "setupCommands": [
                     {
                         "description": "Enable pretty-printing for gdb",
                         "text": "-enable-pretty-printing",
                         "ignoreFailures": true
                     }
-                ]
-            },
+                ],
             "cwd": ".",
             "pipeTransport": {
                 "pipeCwd": "${workspaceFolder}",
