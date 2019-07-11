@@ -1,4 +1,4 @@
-#include "co_multi_src_q.h"
+#include "co_multi_co_wq.h"
 #include <stdio.h>
 
 int main() {

@@ -1,9 +1,10 @@
 #ifndef CO_MULTI_SRC_Q_H
 #define CO_MULTI_SRC_Q_H
-
 /**
+ * @file co_multi_src_q.h
+ *
  * Multi source queue
- * ==================
+ *
  * The aim of this module is to provide a queue that can receive input
  * from multiple threads (enque) and provide output to a single thread (deque).
  *
@@ -29,7 +30,7 @@
 
 #include "dep/co_atomics.h"
 #include "dep/co_queue.h"
-#include "dep/co_threads.h"
+#include "dep/co_sync.h"
 #include "dep/co_types.h"
 #include "utils/co_macro.h"
 
@@ -39,15 +40,15 @@
 
 typedef struct co_multi_src_q {
 #ifdef CO_MULTI_SRC_STATIC_SIZED
-	co_atom_arr_decl(CO_MULTI_SRC_Q_N) locks; /* Locks */
-	co_queue_t[CO_MULTI_SRC_Q_N] iqs;		  /* Input queueues */
+	co_atom_arr_decl(CO_MULTI_SRC_Q_N) locks; /** Locks */
+	co_queue_t[CO_MULTI_SRC_Q_N] iqs;		  /** Input queueues */
 #else
-	co_atom_t *locks; /* Locks */
-	co_queue_t *iqs;  /* Input queueues */
+	co_atom_t *locks; /** Locks */
+	co_queue_t *iqs;  /** Input queueues */
 	co_size_t sz;
 #endif
-	co_queue_t mq; /* Main queue */
-	co_size_t iqi; /* Last input queue we read from */
+	co_queue_t mq; /** Main queue */
+	co_size_t iqi; /** Last input queue we read from */
 } co_multi_src_q_t;
 
 #ifndef CO_MULTI_SRC_STATIC_SIZED
@@ -62,7 +63,7 @@ typedef struct co_multi_src_q {
  * @param size Number of iqs to allocate. Ignored if static sized.
  * @return 0 or error code
  */
-co_errno_t co_multi_src_q_init(co_multi_src_q_t *q, co_size_t size) {
+static __inline__ co_errno_t co_multi_src_q_init(co_multi_src_q_t *q, co_size_t size) {
 #ifndef CO_MULTI_SRC_STATIC_SIZED
 	if ((q->locks = co_atom_alloc(size)) == NULL)
 		return -ENOMEM;
@@ -78,12 +79,21 @@ co_errno_t co_multi_src_q_init(co_multi_src_q_t *q, co_size_t size) {
 		int i;
 		for (i = 0; i < co_multi_src_q_sz(q); ++i) {
 			q->locks[i] = co_atom_init(0);
-			q->iqs[i] = co_queue_init();
+			q->iqs[i] = co_q_init();
 		}
-		q->mq = co_queue_init();
+		q->mq = co_q_init();
 		q->iqi = 0;
 	}
 	return 0;
+}
+
+/**
+ * Destroy multi source queue
+ * @param q Output queue
+ */
+static __inline__ void co_multi_src_q_destroy(co_multi_src_q_t *q) {
+	co_atom_free(q->locks);
+	co_free(q->iqs);
 }
 
 /**
@@ -93,15 +103,18 @@ co_errno_t co_multi_src_q_init(co_multi_src_q_t *q, co_size_t size) {
  */
 static __inline__ co_queue_e_t *co_multi_src_q_peek(co_multi_src_q_t *q) {
 	int i;
+	co_size_t lockid = co_tid_hash() % co_multi_src_q_sz(q);
 	if (!co_q_empty(&q->mq)) /* First always check mq */
 		return co_queue_peek(&q->mq);
 	for (i = 0; i < co_multi_src_q_sz(q); ++i) { /* If nothing in mq, check all iqs */
-		if (!co_q_empty(&q->iqs[q->iqi]) && !co_atom_xchg(&q->locks[q->iqi], 1)) {
+		if (!co_q_empty(&q->iqs[lockid]) && !co_atom_xchg(&q->locks[lockid], 1)) {
 			/* Iq is non empty and lockable - put all its contets to mq*/
-			co_q_enq_q(&q->mq, &q->iqs[q->iqi]);
+			co_q_enq_q(&q->mq, &q->iqs[lockid]);
 			/* Unlock iq */
-			co_atom_xchg_unlock(&q->locks[q->iqi]);
+			co_atom_xchg_unlock(&q->locks[lockid]);
 			return co_multi_src_q_peek(q); /* Now we have something in mq for sure */
+			if (++lockid > co_multi_src_q_sz(q))
+				lockid = 0;
 		}
 	}
 	return NULL;
@@ -134,6 +147,8 @@ static __inline__ co_errno_t co_multi_src_q_enq(co_multi_src_q_t *q, co_queue_e_
 			co_atom_xchg_unlock(&q->locks[q->iqi]);
 			return 0; /* Done */
 		}
+		if (++q->iqi > co_multi_src_q_sz(q))
+			q->iqi = 0;
 	}
 	return -EAGAIN; /* Could not aquire iq. Very low probability, but still. Can try again. */
 }

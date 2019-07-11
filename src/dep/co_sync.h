@@ -1,5 +1,11 @@
-#ifndef CO_THREADS_H
-#define CO_THREADS_H
+#ifndef CO_SYNC_H
+#define CO_SYNC_H
+/**
+ * @file co_sync.h
+ *
+ * Minimal synchronization primitives interface used by the library
+ *
+ */
 
 #include "co_atomics.h"
 #include "co_types.h"
@@ -97,7 +103,7 @@ static __inline__ co_errno_t co_completion_wait(co_completion_t *comp) {
 		if (rv)
 			return rv;
 		do {
-			rv = pthread_cond_wait(&comp->cond, &comp->mutex);
+			rv = -pthread_cond_wait(&comp->cond, &comp->mutex);
 			if (rv)
 				return rv;
 		} while (!comp->done);
@@ -122,4 +128,10 @@ static __inline__ co_errno_t co_completion_done(co_completion_t *comp) {
 	return -pthread_mutex_unlock(&comp->mutex);
 }
 
-#endif /*CO_THREADS_H*/
+/**
+ * Get a not necesserilly unique but consistent per thread hash code
+ * @return: 0 or error code
+ */
+static __inline__ co_size_t co_tid_hash() { return ((2654435769UL * (unsigned long)pthread_self()) >> 32); }
+
+#endif /*CO_SYNC_H*/

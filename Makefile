@@ -26,7 +26,7 @@ OBJ_DIR := $(BUILD_DIR)/obj
 OUT_DIR := $(BUILD_DIR)/$(CONFIG)
 
 #SRC := $(shell find src/ -name '*.c')
-SRC := src/co_multi_wq.c
+SRC := src/demo.c
 OBJ := ${SRC:.c=.o}
 DEP := ${SRC:.c=.d}
 OUT := demo
@@ -70,7 +70,10 @@ $(OBJ_DIR)/%.o: %.c Makefile | $(MAKE_DIRS)
 
 all: $(OUT_DIR)/$(OUT)
 
+doc:
+	$(TRACE)doxygen
+
 clean:
-	$(TRACE)rm -rf build
+	$(TRACE)rm -rf build doc
 
 -include $(DEP_DIR)/$(DEP)
