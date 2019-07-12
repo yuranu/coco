@@ -49,6 +49,6 @@ static __inline__ void co_q_enq_q(co_queue_t *dst, co_queue_t *src) {
 	*src = co_q_init();
 }
 
-#define co_queue_for_each(var, q) for ((var) = (q)->head; (var) != (q)->tail->next; (var) = (var)->next)
+#define for_each_co_queue(var, q) for ((var) = (q)->head; (var) != (q)->tail->next; (var) = (var)->next)
 
 #endif /*CO_QUEUE*/
