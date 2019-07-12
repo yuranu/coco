@@ -12,6 +12,7 @@
  */
 
 #include "co_multi_src_q.h"
+#include "dep/co_allocator.h"
 #include "dep/co_assert.h"
 #include "dep/co_queue.h"
 #include "dep/co_sync.h"
@@ -46,7 +47,7 @@ struct co_multi_co_wq;
  * Possible exit code of coroutine
  */
 typedef enum co_yield_rv {
-	CO_RV_YIELD_TERM,   /** Execution terminated. */
+	CO_RV_YIELD_BREAK,  /** Execution terminated. */
 	CO_RV_YIELD_WAIT,   /** Not terminated, still running asynchronously */
 	CO_RV_YIELD_RETURN, /** Terminated cycle, but there are more cycles */
 	CO_RV_YIELD_ERROR   /** Unexpected error during the execution */
@@ -74,8 +75,12 @@ typedef struct co_coroutine_obj {
 	co_yield_rv_t (*func)(struct co_coroutine_obj *);
 	/** Resume position inside coroutine function */
 	co_ipointer_t ip;
-	/** Pointer to async called child coroutine */
-	struct co_coroutine_obj *child;
+	/**
+	 * Pointer to coroutine parent
+	 * In case of coroutine from fast queue, it is always another coroutine, of type co_coroutine_obj
+	 * In case of slow queue, it is always object of type future (TODO: implement future use case)
+	 */
+	void *parent;
 
 } co_coroutine_obj_t;
 
@@ -87,10 +92,11 @@ typedef struct co_coroutine_obj {
 typedef struct co_exec_wait_q {
 	co_queue_t exec;
 	co_queue_t wait;
+	co_allocator_t *alloc;
 } co_exec_wait_q_t;
 
-#define co_co_exec_wait_q_init()                                                                                       \
-	(co_exec_wait_q_t) { co_q_init(), co_q_init() }
+#define co_co_exec_wait_q_init(alloc)                                                                                  \
+	(co_exec_wait_q_t) { co_q_init(), co_q_init(), alloc }
 
 /**
  * The coroutines work queue object
@@ -114,47 +120,48 @@ typedef struct co_multi_co_wq {
 } co_multi_co_wq_t;
 
 /**
- * Send memory to deallocation by fast queue deallocator
- * @param wq Coroutine work queue pointer
- * @param ptr Memory pointer
- */
-#define co_send_to_fast_dealloc(wq, ptr) co_free(ptr)
-
-/**
- * Send memory to deallocation by slow queue deallocator
- * @param wq Coroutine work queue pointer
- * @param ptr Memory pointer
- */
-#define co_send_to_slow_dealloc(wq, ptr) co_free(ptr)
-
-/**
- * Send memory to queue deallocator
- * @param wq Coroutine work queue pointer
- * @param is_fast Is it fast or slow queue
- * @param ptr Memory pointer
- */
-#define co_send_to_dealloc(wq, ptr, is_fast)                                                                           \
-	is_fast ? co_send_to_fast_dealloc(wq, ptr) : co_send_to_slow_dealloc(wq, ptr);
-
-/**
  * Initialize coroutine work queue
  * @param wq Coroutine work queue pointer
  * @param size Size of multi queue to use for input
  * @return 0 or error code
  */
-static __inline__ co_errno_t co_multi_co_wq_init(co_multi_co_wq_t *wq, co_size_t size) {
+static __inline__ co_errno_t co_multi_co_wq_init(co_multi_co_wq_t *wq, co_size_t size, co_allocator_t *fast_alloc,
+												 co_allocator_t *slow_alloc) {
 	int rv = co_completion_init(&wq->bell.bell);
 	if (rv)
 		return rv;
 	rv = co_multi_src_q_init(&wq->inputq, size);
 	if (rv) {
-		co_multi_src_q_destroy(&wq->inputq);
+		co_completion_destroy(&wq->bell.bell);
 		return rv;
 	}
 	wq->bell.wake_me_up = co_atom_init(0);
-	wq->fastq = co_co_exec_wait_q_init();
-	wq->slowq = co_co_exec_wait_q_init();
+	wq->fastq = co_co_exec_wait_q_init(fast_alloc);
+	wq->slowq = co_co_exec_wait_q_init(slow_alloc);
 	return 0;
+}
+
+/**
+ * Destroy work queue
+ * Deallocate all objects in the queue before that
+ * @param wq Coroutine work queue pointer
+ * @warning New calls arriving during destruction is undefined behaviour
+ */
+static __inline__ void co_multi_co_wq_destroy(co_multi_co_wq_t *wq) {
+	void *task;
+
+	for_each_drain_queue(task, &wq->fastq.exec, co_q_peek, co_q_deq) { wq->fastq.alloc->free(wq->fastq.alloc, task); }
+	for_each_drain_queue(task, &wq->fastq.wait, co_q_peek, co_q_deq) { wq->fastq.alloc->free(wq->fastq.alloc, task); }
+
+	for_each_drain_queue(task, &wq->slowq.exec, co_q_peek, co_q_deq) { wq->slowq.alloc->free(wq->slowq.alloc, task); }
+	for_each_drain_queue(task, &wq->slowq.wait, co_q_peek, co_q_deq) { wq->slowq.alloc->free(wq->slowq.alloc, task); }
+
+	for_each_drain_queue(task, &wq->inputq, co_multi_src_q_peek, co_multi_src_q_deq) {
+		wq->slowq.alloc->free(wq->slowq.alloc, task);
+	}
+
+	co_multi_src_q_destroy(&wq->inputq);
+	co_completion_destroy(&wq->bell.bell);
 }
 
 /**
@@ -172,7 +179,7 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 		do {
 			/* 1. Start with draining the exec queues */
 			for (i = 0, q = &wq->fastq; i < 2; ++i, q = &wq->slowq) {
-				task = co_queue_peek(&q->exec);
+				task = co_q_peek(&q->exec);
 				if (task) {
 					co_q_deq(&q->exec);
 					goto task_found;
@@ -182,7 +189,7 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 			/* 2. Now the wait queues */
 			for (i = 0, q = &wq->fastq; i < 2; ++i, q = &wq->slowq) {
 				for_each_co_queue(task, &q->wait) {
-					co_coroutine_obj_t *coroutine = container_of(task, co_coroutine_obj_t, qe);
+					co_coroutine_obj_t *coroutine = __co_container_of(task, co_coroutine_obj_t, qe);
 					if (coroutine->ready) {
 						co_q_deq(&q->wait);
 						goto task_found;
@@ -213,15 +220,15 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 	task_found:
 		if (task != NULL) {
 			/* Attempt to execute the task */
-			co_coroutine_obj_t *coroutine = container_of(task, co_coroutine_obj_t, qe);
+			co_coroutine_obj_t *coroutine = __co_container_of(task, co_coroutine_obj_t, qe);
 			co_yield_rv_t co_rv;
 
 			b4sleep = 0; /* No sleep for next round */
 
 			co_rv = coroutine->func(coroutine);
 			switch (co_rv) {
-				case CO_RV_YIELD_TERM:
-					co_send_to_dealloc(wq, task, q == &wq->fastq);
+				case CO_RV_YIELD_BREAK:
+					q->alloc->free(q->alloc, task);
 					break;
 				case CO_RV_YIELD_WAIT:
 					co_q_enq(&q->wait, task);

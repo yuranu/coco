@@ -41,7 +41,7 @@ static __inline__ void co_q_enq_head(co_queue_t *q, co_queue_e_t *elem) {
 
 static __inline__ void co_q_deq(co_queue_t *q) { q->head = q->head->next; }
 
-static __inline__ co_queue_e_t *co_queue_peek(co_queue_t *q) { return q->head; }
+static __inline__ co_queue_e_t *co_q_peek(co_queue_t *q) { return q->head; }
 
 static __inline__ void co_q_enq_q(co_queue_t *dst, co_queue_t *src) {
 	dst->tail->next = src->head;
@@ -50,5 +50,7 @@ static __inline__ void co_q_enq_q(co_queue_t *dst, co_queue_t *src) {
 }
 
 #define for_each_co_queue(var, q) for ((var) = (q)->head; (var) != (q)->tail->next; (var) = (var)->next)
+
+#define for_each_drain_queue(var, q, peek, deq) for ((var) = peek(q); (var); (var) = peek(q), deq(q))
 
 #endif /*CO_QUEUE*/

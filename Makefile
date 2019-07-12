@@ -21,9 +21,9 @@ TRACE = @echo '> $@';
 # Macros
 
 BUILD_DIR := build
-DEP_DIR := $(BUILD_DIR)/dep
-OBJ_DIR := $(BUILD_DIR)/obj
-OUT_DIR := $(BUILD_DIR)/$(CONFIG)
+DEP_DIR := $(BUILD_DIR)/$(CONFIG)/dep
+OBJ_DIR := $(BUILD_DIR)/$(CONFIG)/obj
+OUT_DIR := $(BUILD_DIR)/$(CONFIG)/bin
 
 #SRC := $(shell find src/ -name '*.c')
 SRC := src/demo.c

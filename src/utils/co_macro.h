@@ -1,12 +1,17 @@
-#ifndef UTILS__CO_MACRO_H
-#define UTILS__CO_MACRO_H
+#ifndef CO_MACRO_H
+#define CO_MACRO_H
 
-#define co_stringify_(x) #x
-#define co_stringify(x) co_stringify_(x)
+#ifndef container_of
+#define __co_container_of(ptr, type, member) ((type *)((void *)ptr - (void *)&((type *)0)->member))
+#else
+#define __co_container_of container_of
+#endif
 
-#define co_sizeof_array(a) sizeof(a)
+#define __co_if_empty(param, x, y) __co_cat_2(__co_if_empty_, __co_narg(param))(x, y)
+#define __co_if_empty_0(x, y) x
+#define __co_if_empty_1(x, y) y
 
-#define container_of(ptr, type, member) ((type *)((void *)ptr - (void *)&((type *)0)->member))
+#define __co_sizeof_array(a) sizeof(a) /* TODO: Validate a is array at compile time */
 
 #define __co_list_c(...) __co_cat_2(__co_list_c_, __co_narg(__VA_ARGS__))(__VA_ARGS__)
 #define __co_list_c_0()
@@ -54,8 +59,14 @@
 #define __co_cat_2(x, y) __co_cat_2_(x, y)
 #define __co_cat_2_(x, y) x##y
 
+#define __co_stringify_(x) #x
+#define __co_stringify(x) __co_stringify_(x)
+
+#define __co_eval_(x) x
+#define __co_eval(x) __co_eval_(x)
+
 #define __co_nop(...)                                                                                                  \
 	do {                                                                                                               \
 	} while (0)
 
-#endif /*UTILS__CO_MACRO_H*/
+#endif /*CO_MACRO_H*/

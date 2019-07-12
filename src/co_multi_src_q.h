@@ -105,7 +105,7 @@ static __inline__ co_queue_e_t *co_multi_src_q_peek(co_multi_src_q_t *q) {
 	int i;
 	co_size_t lockid = co_tid_hash() % co_multi_src_q_sz(q);
 	if (!co_q_empty(&q->mq)) /* First always check mq */
-		return co_queue_peek(&q->mq);
+		return co_q_peek(&q->mq);
 	for (i = 0; i < co_multi_src_q_sz(q); ++i) { /* If nothing in mq, check all iqs */
 		if (!co_q_empty(&q->iqs[lockid]) && !co_atom_xchg(&q->locks[lockid], 1)) {
 			/* Iq is non empty and lockable - put all its contets to mq*/
