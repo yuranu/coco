@@ -1,9 +1,16 @@
 #include "co_coroutines.h"
 #include "dep/co_primitive_allocator.h"
 #include <stdio.h>
+#include <unistd.h>
 
 co_routine_decl(int, test1, int, x, int, y);
 co_routine_decl(/* void */, test2, int, x, int, y);
+
+void *waker_thread(void *param) {
+	usleep(1000000);
+	co_coroutine_obj_ring_the_bell(((co_coroutine_obj_t *)param));
+	return NULL;
+}
 
 co_routine_body(test1) {
 	co_routine_start(test1);
@@ -31,6 +38,11 @@ co_routine_body(test2) {
 	++args->y;
 
 	co_yield_return();
+	{
+		pthread_t sleeper;
+		pthread_create(&sleeper, NULL, waker_thread, __co_obj);
+	}
+	co_yield_wait();
 
 	printf("Test 2: x = %d, y = %d\n", args->x, args->y);
 

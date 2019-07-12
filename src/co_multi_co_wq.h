@@ -251,4 +251,14 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 	return 0;
 }
 
+/**
+ * Activate the bell event of work queue
+ * @param co Coroutine object pointer
+ */
+void static __inline__ co_coroutine_obj_ring_the_bell(co_coroutine_obj_t *co) {
+	if (co_atom_cmpxchg(&co->wq->bell.wake_me_up, 1, 0) == 1)
+		co->ready = 1;
+		co_completion_done(&co->wq->bell.bell);
+}
+
 #endif /*CO_MULTI_CO_WQ_H*/
