@@ -31,7 +31,7 @@ OBJ := ${SRC:.c=.o}
 DEP := ${SRC:.c=.d}
 OUT := demo
 
-CFLAGS := -std=gnu89 -Wall -Werror
+CFLAGS := -std=gnu89 -Wall -Werror -DCO_MULTI_SRC_Q_N=4
 LDFLAGS :=
 INCLUDES :=
 

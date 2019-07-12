@@ -40,8 +40,8 @@
 
 typedef struct co_multi_src_q {
 #ifdef CO_MULTI_SRC_STATIC_SIZED
-	co_atom_arr_decl(CO_MULTI_SRC_Q_N) locks; /** Locks */
-	co_queue_t[CO_MULTI_SRC_Q_N] iqs;		  /** Input queueues */
+	co_atom_arr_decl(locks, CO_MULTI_SRC_Q_N); /** Locks */
+	co_queue_t iqs[CO_MULTI_SRC_Q_N];		   /** Input queueues */
 #else
 	co_atom_t *locks; /** Locks */
 	co_queue_t *iqs;  /** Input queueues */
@@ -103,19 +103,18 @@ static __inline__ void co_multi_src_q_destroy(co_multi_src_q_t *q) {
  */
 static __inline__ co_queue_e_t *co_multi_src_q_peek(co_multi_src_q_t *q) {
 	int i;
-	co_size_t lockid = co_tid_hash() % co_multi_src_q_sz(q);
 	if (!co_q_empty(&q->mq)) /* First always check mq */
 		return co_q_peek(&q->mq);
 	for (i = 0; i < co_multi_src_q_sz(q); ++i) { /* If nothing in mq, check all iqs */
-		if (!co_q_empty(&q->iqs[lockid]) && !co_atom_xchg(&q->locks[lockid], 1)) {
+		if (!co_q_empty(&q->iqs[q->iqi]) && !co_atom_xchg(&q->locks[q->iqi], 1)) {
 			/* Iq is non empty and lockable - put all its contets to mq*/
-			co_q_enq_q(&q->mq, &q->iqs[lockid]);
+			co_q_enq_q(&q->mq, &q->iqs[q->iqi]);
 			/* Unlock iq */
-			co_atom_xchg_unlock(&q->locks[lockid]);
+			co_atom_xchg_unlock(&q->locks[q->iqi]);
 			return co_multi_src_q_peek(q); /* Now we have something in mq for sure */
-			if (++lockid > co_multi_src_q_sz(q))
-				lockid = 0;
 		}
+		if (++q->iqi > co_multi_src_q_sz(q))
+				q->iqi = 0;
 	}
 	return NULL;
 }
@@ -139,16 +138,17 @@ static __inline__ void co_multi_src_q_deq(co_multi_src_q_t *q) {
 static __inline__ co_errno_t co_multi_src_q_enq(co_multi_src_q_t *q, co_queue_e_t *e) {
 	/* First aquire some lock */
 	int i;
+	co_size_t lockid = co_tid_hash() % co_multi_src_q_sz(q);
 	for (i = 0; i < co_multi_src_q_sz(q); ++i) { /* Try aquire each mq */
-		if (!co_atom_xchg(&q->locks[q->iqi], 1)) {
+		if (!co_atom_xchg(&q->locks[lockid], 1)) {
 			/* Aquired one, great */
-			co_q_enq(&q->iqs[q->iqi], e); /* Simply put it */
+			co_q_enq(&q->iqs[lockid], e); /* Simply put it */
 			/* Unlock iq */
-			co_atom_xchg_unlock(&q->locks[q->iqi]);
+			co_atom_xchg_unlock(&q->locks[lockid]);
 			return 0; /* Done */
 		}
-		if (++q->iqi > co_multi_src_q_sz(q))
-			q->iqi = 0;
+		if (++lockid > co_multi_src_q_sz(q))
+			lockid = 0;
 	}
 	return -EAGAIN; /* Could not aquire iq. Very low probability, but still. Can try again. */
 }

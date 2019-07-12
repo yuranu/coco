@@ -42,6 +42,20 @@
 #define __co_pairs_6(d, _1, _2, _3, _4, _5, _6) _1 _2 d _3 _4 d _5 _6
 #define __co_pairs_8(d, _1, _2, _3, _4, _5, _6, _7, _8) _1 _2 d _3 _4 d _5 _6 d _7 _8
 
+#define __co_pairs_comma(...) __co_cat_2(__co_pairs_comma_, __co_narg(__VA_ARGS__))(##__VA_ARGS__)
+#define __co_pairs_comma_0()
+#define __co_pairs_comma_2(_1, _2) _1 _2
+#define __co_pairs_comma_4(_1, _2, _3, _4) _1 _2, _3 _4
+#define __co_pairs_comma_6(_1, _2, _3, _4, _5, _6) _1 _2, _3 _4, _5 _6
+#define __co_pairs_comma_8(_1, _2, _3, _4, _5, _6, _7, _8) _1 _2, _3 _4, _5 _6, _7 _8
+
+#define __co_even_args_comma(delim, ...) __co_cat_2(__co_even_args_, __co_narg(__VA_ARGS__))(##__VA_ARGS__)
+#define __co_even_args_comma_0(d)
+#define __co_even_args_comma_2(d, _1, _2) _2
+#define __co_even_args_comma_4(d, _1, _2, _3, _4) _2, _4
+#define __co_even_args_comma_6(d, _1, _2, _3, _4, _5, _6) _2, _4, _6
+#define __co_even_args_comma_8(d, _1, _2, _3, _4, _5, _6, _7, _8) _2, _4, _6, _8
+
 #define __co_narg(...) __co_narg_(dum, ##__VA_ARGS__, __co_n_list())
 #define __co_narg_(...) __co_arg_n(__VA_ARGS__)
 

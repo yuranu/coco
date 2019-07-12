@@ -11,7 +11,7 @@
 typedef struct { int counter; } co_atom_t __attribute__ ((aligned (32)));
 #define co_atom_init(val) (co_atom_t){ (val) }
 
-#define co_atom_arr_t(size) co_atom_t[size] __attribute__ ((aligned (32)));
+#define co_atom_arr_decl(name, size) co_atom_t name[size] __attribute__ ((aligned (32)));
 #define co_atom_alloc(count) co_malloc_memalign(32, count * sizeof(co_atom_t))
 #define co_atom_free(ptr) co_free(ptr)
 

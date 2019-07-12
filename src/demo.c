@@ -42,8 +42,15 @@ co_routine_body(test2) {
 int main() {
 	co_allocator_t a = co_primitive_allocator_init();
 	co_multi_co_wq_t wq;
+
 	co_multi_co_wq_init(&wq, 8, &a, &a);
 
+	co_routine_invoke(test1, &wq, 10, 20);
+	co_routine_invoke(test2, &wq, 30, 40);
+
+	co_multi_co_wq_loop(&wq);
+
 	co_multi_co_wq_destroy(&wq);
+
 	return 0;
 }

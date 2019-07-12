@@ -40,6 +40,12 @@
  *
  */
 
+/**
+ * Future returned to coroutine original caller.
+ * TODO: Implement full future functionality
+ */
+typedef void *co_future_t;
+
 struct co_coroutine_obj;
 struct co_multi_co_wq;
 
@@ -138,6 +144,7 @@ static __inline__ co_errno_t co_multi_co_wq_init(co_multi_co_wq_t *wq, co_size_t
 	wq->bell.wake_me_up = co_atom_init(0);
 	wq->fastq = co_co_exec_wait_q_init(fast_alloc);
 	wq->slowq = co_co_exec_wait_q_init(slow_alloc);
+	wq->terminate = 0;
 	return 0;
 }
 

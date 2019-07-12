@@ -27,16 +27,32 @@
 #define co_sync_fname(fname) fname
 
 /**
- * Naming convention for coroutine async invocator
- * TODO: Implement invocators
+ * Initializer for ctx object of coroutine
+ * @param fname Coroutine name
+ * @param wq Work queue
+ * @param ... Argument initializer list
  */
-#define co_async_fname(fname) __co_cat_2(fname, _co_start)
+#define co_routine_ctx_init(fname, wqptr, ...)                                                                         \
+	(struct co_ctx_tname(fname)) {                                                                                     \
+		.obj.wq = wqptr, .obj.ready = 0, .obj.func = co_body_fname(fname), .obj.ip = CO_IPOINTER_START,                \
+		.obj.parent = NULL, .args = {__co_list_c(__VA_ARGS__)}, .locs_ptr = NULL                                       \
+	}
 
-/**
- * Naming convention for child coroutine async invocator
- * TODO: Implement invocators
- */
-#define co_fast_async_fname(fname) __co_cat_2(fname, _co_start_child)
+#define co_routine_invoke(fname, wq, ...)                                                                              \
+	({                                                                                                                 \
+		co_errno_t __co_rv = 0;                                                                                        \
+		struct co_ctx_tname(fname) *__co_obj =                                                                         \
+			(wq)->slowq.alloc->alloc((wq)->slowq.alloc, sizeof(struct co_ctx_tname(fname)));                           \
+		if (!__co_obj)                                                                                                 \
+			__co_rv = -ENOMEM;                                                                                         \
+		if (!__co_rv) {                                                                                                \
+			*__co_obj = co_routine_ctx_init(fname, (wq), ##__VA_ARGS__);                                               \
+			__co_rv = co_multi_src_q_enq(&(wq)->inputq, &__co_obj->obj.qe);                                     \
+			if (__co_rv)                                                                                               \
+				(wq)->slowq.alloc->free((wq)->slowq.alloc, __co_obj);                                                  \
+		}                                                                                                              \
+		__co_rv;                                                                                                       \
+	})
 
 /**
  * Naming convention for coroutine body
@@ -79,7 +95,7 @@
  */
 #define co_routine_start(fname, ...)                                                                                   \
 	/* TODO: Add code that defines local object struct */                                                              \
-	struct co_ctx_tname(fname) *__co_ctx = co_ctx(__co_obj, fname);                                              \
+	struct co_ctx_tname(fname) *__co_ctx = co_ctx(__co_obj, fname);                                                    \
 	struct co_args_tname(fname) *args = &__co_ctx->args;                                                               \
 	__co_if_empty(__VA_ARGS__, , struct co_locs_tname(fname) *locs = __co_ctx->locs_ptr);                              \
 	/* TODO: Add code that initializes locals object */                                                                \
@@ -100,8 +116,8 @@
  * @param ... Optional return value
  */
 #define co_yield_return(...)                                                                                           \
-	__co_if_empty(__VA_ARGS__, , __co_ctx->rv = __VA_ARGS__); /* Set rv */                                        \
-	__co_obj->ip = &&co_label_checkpoint - &&__co_label_start;	 /* Save return point */                             \
+	__co_if_empty(__VA_ARGS__, , __co_ctx->rv = __VA_ARGS__);  /* Set rv */                                            \
+	__co_obj->ip = &&co_label_checkpoint - &&__co_label_start; /* Save return point */                                 \
 	return CO_RV_YIELD_RETURN;                                                                                         \
 	co_label_checkpoint:                                                                                               \
 	__co_nop() /* Next execution will start from here */
