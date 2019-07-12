@@ -1,2 +1,2 @@
-# coco
-Coroutines implementation in ANSI C using preprocessor
+# CoCo couroutines
+This is my attempt to implement coroutines mechanism in pure ANSI C.
