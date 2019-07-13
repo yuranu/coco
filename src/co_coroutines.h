@@ -22,7 +22,7 @@
 
 /**
  * Naming convention for coroutine sync invocator
- * TODO: Implement invocators
+ * @todo Implement invocators
  */
 #define co_sync_fname(fname) fname
 
@@ -35,19 +35,45 @@
 #define co_routine_ctx_init(fname, wqptr, ...)                                                                         \
 	(struct co_ctx_tname(fname)) {                                                                                     \
 		.obj.wq = wqptr, .obj.ready = 0, .obj.func = co_body_fname(fname), .obj.ip = CO_IPOINTER_START,                \
-		.obj.parent = NULL, .args = {__co_list_c(__VA_ARGS__)}, .locs_ptr = NULL                                       \
+		.obj.child = NULL, .obj.parent = NULL, .args = {__co_list_c(__VA_ARGS__)}, .locs_ptr = NULL,                   \
+		co_dbg(.obj.func_name = __co_stringify(fname))                                                                 \
 	}
+
+/**
+ * Support macro called from coroutine context to handle critical error.
+ * @warning Never use directly unless you know what you are doing
+ * @todo Proper handling
+ */
+#define __co_handle_critical_error() return CO_RV_YIELD_ERROR
+
+/**
+ * Prepare child coroutine object for execution
+ * Uses fastq for memory allocation
+ * @param fname Child coroutine to prepare
+ * @param ... Optional child arguments
+ * @note Only allowed to be called from coroutine context, assumes __co_obj defined.
+ */
+#define co_prepare_child(fname, ...)                                                                                   \
+	({                                                                                                                 \
+		struct co_ctx_tname(fname) *__co_child_obj =                                                                   \
+		    __co_obj->wq->fastq.alloc->alloc(__co_obj->wq->fastq.alloc, sizeof(struct co_ctx_tname(fname)));           \
+		if (!__co_child_obj) /* ENOMEM */                                                                              \
+			__co_handle_critical_error();                                                                              \
+		*__co_child_obj            = co_routine_ctx_init(fname, __co_obj->wq, ##__VA_ARGS__); /* Pass the args */      \
+		__co_child_obj->obj.parent = __co_obj;             /* Link child to parent */                                  \
+		__co_obj->child            = &__co_child_obj->obj; /* Link parent to child */                                  \
+	})
 
 #define co_routine_invoke(fname, wq, ...)                                                                              \
 	({                                                                                                                 \
 		co_errno_t __co_rv = 0;                                                                                        \
 		struct co_ctx_tname(fname) *__co_obj =                                                                         \
-			(wq)->slowq.alloc->alloc((wq)->slowq.alloc, sizeof(struct co_ctx_tname(fname)));                           \
+		    (wq)->slowq.alloc->alloc((wq)->slowq.alloc, sizeof(struct co_ctx_tname(fname)));                           \
 		if (!__co_obj)                                                                                                 \
 			__co_rv = -ENOMEM;                                                                                         \
 		if (!__co_rv) {                                                                                                \
 			*__co_obj = co_routine_ctx_init(fname, (wq), ##__VA_ARGS__);                                               \
-			__co_rv = co_multi_src_q_enq(&(wq)->inputq, &__co_obj->obj.qe);                                     \
+			__co_rv   = co_multi_src_q_enq(&(wq)->inputq, &__co_obj->obj.qe);                                          \
 			if (__co_rv)                                                                                               \
 				(wq)->slowq.alloc->free((wq)->slowq.alloc, __co_obj);                                                  \
 		}                                                                                                              \
@@ -78,7 +104,7 @@
  * Co routine declaration, must come before body
  */
 #define co_routine_decl(rtype, fname, ...)                                                                             \
-	co_ctx_def(rtype, fname, ##__VA_ARGS__);				 /* Define ctx */                                          \
+	co_ctx_def(rtype, fname, ##__VA_ARGS__);                 /* Define ctx */                                          \
 	co_yield_rv_t co_body_fname(fname)(co_coroutine_obj_t *) /* Declare function */
 
 /**
@@ -92,19 +118,22 @@
  * @param fname Coroutine name
  * @param co_obj Coroutine object funciton parameter name
  * @param ... List of local variables of form [type, name, type, name, ...]
+ * @note Only allowed to be called from coroutine context, assumes __co_obj defined.
  */
 #define co_routine_start(fname, ...)                                                                                   \
-	/* TODO: Add code that defines local object struct */                                                              \
+	/** @todo Add code that defines local object struct */                                                             \
 	struct co_ctx_tname(fname) *__co_ctx = co_ctx(__co_obj, fname);                                                    \
-	struct co_args_tname(fname) *args = &__co_ctx->args;                                                               \
+	struct co_args_tname(fname) *args    = &__co_ctx->args;                                                            \
 	__co_if_empty(__VA_ARGS__, , struct co_locs_tname(fname) *locs = __co_ctx->locs_ptr);                              \
-	/* TODO: Add code that initializes locals object */                                                                \
+	/** @todo Add code that initializes locals object */                                                               \
 	__co_label_start:                                                                                                  \
+	__co_obj->ready = 0; /* Coroutine always assumes results not ready, and tries to prove this wrong */               \
 	if (__co_obj->ip != CO_IPOINTER_START)                                                                             \
 		goto *(&&__co_label_start + __co_obj->ip);
 
-#define co_label_checkpoint_n(n) __co_cat_2(__co_label_checkpoint_, n)
-#define co_label_checkpoint co_label_checkpoint_n(__LINE__)
+#define co_gen_label(labael, n) __co_cat_2(labael, n)
+#define co_label_checkpoint co_gen_label(__co_label_checkpoint_, __LINE__)
+#define co_label_checkpoint_2 co_gen_label(__co_label_checkpoint_2_, __LINE__)
 
 /**
  * Terminate coroutine execution
@@ -114,6 +143,7 @@
 /**
  * Yield coroutine, returning a value
  * @param ... Optional return value
+ * @note Only allowed to be called from coroutine context, assumes __co_obj defined.
  */
 #define co_yield_return(...)                                                                                           \
 	__co_if_empty(__VA_ARGS__, , __co_ctx->rv = __VA_ARGS__);  /* Set rv */                                            \
@@ -125,12 +155,60 @@
 /**
  * Yield coroutine and send it to sleep
  * @param ... Optional timeout
- * TODO: Implement timeout
+ * @todo Implement timeout
+ * @note Only allowed to be called from coroutine context, assumes __co_obj defined.
  */
 #define co_yield_wait(...)                                                                                             \
 	__co_obj->ip = &&co_label_checkpoint - &&__co_label_start; /* Save return point */                                 \
 	return CO_RV_YIELD_WAIT;                                                                                           \
 	co_label_checkpoint:                                                                                               \
 	__co_nop() /* Next execution will start from here */
+
+/**
+ * Invoke coroutine and iterate over its results
+ * @param fname Coroutine to invoke
+ * @param var Variable to store child rv to. Can be left empty to discard rv.
+ * @param args Optional child invocation args comma separated tuple (a,b,c,...)
+ * @param code Inner loop code snippet enclosed in {}
+ * @note Only allowed to be called from coroutine context, assumes __co_obj defined.
+ * @todo Handle ignored var
+ */
+#define co_foreach_yield(var, fname, args, code)                                                                       \
+	co_prepare_child(fname, __co_list_c args);                                                                         \
+	__co_obj->ip = &&co_label_checkpoint - &&__co_label_start; /* Prepare loop */                                      \
+	co_q_enq(&__co_obj->wq->fastq.exec, &__co_obj->child->qe); /* Enqueue the child, we can use the fastq for that */  \
+	return CO_RV_YIELD_WAIT;                                   /* And now go to sleep, child will wake us up */        \
+	co_label_checkpoint:                                       /* We are here after child response */                  \
+	if (__co_obj->child) {                                     /* Child not terminated */                              \
+		var = __co_container_of(__co_obj->child, struct co_ctx_tname(fname), obj)->rv; /* Grab the results */          \
+		code;                                                                          /* Invoke user code */          \
+		/* Next iteration */                                                                                           \
+		__co_obj->ip = &&co_label_checkpoint - &&__co_label_start; /* Fix loop if damaged by user code */              \
+		co_q_enq(&__co_obj->wq->fastq.exec, &__co_obj->child->qe);                                                     \
+		return CO_RV_YIELD_WAIT;                                                                                       \
+	}
+
+/**
+ * Invoke coroutine and return its results
+ * Special case of co_foreach_yield, which simply returns child's results
+ * @param fname Coroutine to invoke
+ * @param ... Optional child invocation args
+ * @note Only allowed to be called from coroutine context, assumes __co_obj defined.
+ * @todo Make this actually work
+ */
+#define co_foreach_yield_return(fname, ...)                                                                            \
+	co_prepare_child(fname, ##__VA_ARGS__);                                                                            \
+	co_label_checkpoint_2:                                                                                             \
+	__co_obj->ip = &&co_label_checkpoint - &&__co_label_start; /* Prepare loop */                                      \
+	co_q_enq(&__co_obj->wq->fastq.exec, &__co_obj->child->qe); /* Enqueue the child, we can use the fastq for that */  \
+	return CO_RV_YIELD_WAIT;                                   /* And now go to sleep, child will wake us up */        \
+	co_label_checkpoint:                                       /* We are here after child response */                  \
+	if (__co_obj->child) {                                     /* Child not terminated */                              \
+		__co_ctx->rv = __co_container_of(__co_obj->child, struct co_ctx_tname(fname), obj)->rv; /* Grab the results */ \
+		/* Next iteration */                                                                                           \
+		__co_obj->ip    = &&co_label_checkpoint2 - &&__co_label_start; /* Fix loop to start from child submission */   \
+		__co_obj->ready = 1;                                                                                           \
+		return CO_RV_YIELD_RETURN;                                                                                     \
+	}
 
 #endif /*CO_COROUTINES_H*/

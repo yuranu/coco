@@ -8,6 +8,7 @@
  */
 
 #include "co_atomics.h"
+#include "co_dbg.h"
 #include "co_types.h"
 #include <pthread.h>
 #include <semaphore.h>
@@ -24,7 +25,7 @@ typedef sem_t co_sem_t;
  */
 static __inline__ co_errno_t co_sem_init(co_sem_t *sem, int size) {
 	int rv = sem_init(sem, 0, 0);
-	rv = !rv ? 0 : (errno ? errno : EINVAL);
+	rv     = !rv ? 0 : (errno ? errno : EINVAL);
 	return -rv;
 }
 
@@ -41,7 +42,7 @@ static __inline__ void co_sem_destroy(co_sem_t *sem) { sem_destroy(sem); }
  */
 static __inline__ co_errno_t co_sem_up(co_sem_t *sem) {
 	int rv = sem_post(sem);
-	rv = !rv ? 0 : (errno ? errno : EINVAL);
+	rv     = !rv ? 0 : (errno ? errno : EINVAL);
 	return -rv;
 }
 
@@ -52,7 +53,7 @@ static __inline__ co_errno_t co_sem_up(co_sem_t *sem) {
  */
 static __inline__ co_errno_t co_sem_down(co_sem_t *sem) {
 	int rv = sem_wait(sem);
-	rv = !rv ? 0 : (errno ? errno : EINVAL);
+	rv     = !rv ? 0 : (errno ? errno : EINVAL);
 	return -rv;
 }
 
@@ -73,7 +74,7 @@ typedef struct co_completion {
  */
 static __inline__ co_errno_t co_completion_init(co_completion_t *comp) {
 	comp->done = 0;
-	int rv = -pthread_cond_init(&comp->cond, NULL);
+	int rv     = -pthread_cond_init(&comp->cond, NULL);
 	if (rv)
 		return rv;
 	rv = -pthread_mutex_init(&comp->mutex, NULL);
@@ -98,18 +99,17 @@ static __inline__ void co_completion_destroy(co_completion_t *comp) {
  * @return: 0 or error code
  */
 static __inline__ co_errno_t co_completion_wait(co_completion_t *comp) {
-	if (!comp->done) {
-		int rv = -pthread_mutex_lock(&comp->mutex);
+	int rv = -pthread_mutex_lock(&comp->mutex);
+	if (rv)
+		return rv;
+	while (!comp->done) {
+		rv = -pthread_cond_wait(&comp->cond, &comp->mutex);
 		if (rv)
 			return rv;
-		do {
-			rv = -pthread_cond_wait(&comp->cond, &comp->mutex);
-			if (rv)
-				return rv;
-		} while (!comp->done);
-		return -pthread_mutex_unlock(&comp->mutex);
 	}
-	return 0;
+	co_dbg_trace("unset completion\n");
+	comp->done = 0;
+	return -pthread_mutex_unlock(&comp->mutex);
 }
 
 /**
@@ -118,13 +118,14 @@ static __inline__ co_errno_t co_completion_wait(co_completion_t *comp) {
  * @return: 0 or error code
  */
 static __inline__ co_errno_t co_completion_done(co_completion_t *comp) {
-	comp->done = 1;
 	int rv = -pthread_mutex_lock(&comp->mutex);
 	if (rv)
 		return rv;
 	rv = pthread_cond_signal(&comp->cond);
 	if (rv)
 		return rv;
+	co_dbg_trace("set completion\n");
+	comp->done = 1;
 	return -pthread_mutex_unlock(&comp->mutex);
 }
 

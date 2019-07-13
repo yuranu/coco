@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 co_routine_decl(int, test1, int, x, int, y);
+co_routine_decl(int, test0, int *, x, int, y);
 co_routine_decl(/* void */, test2, int, x, int, y);
 
 void *waker_thread(void *param) {
@@ -12,7 +13,37 @@ void *waker_thread(void *param) {
 	return NULL;
 }
 
+void *waker_thread2(void *param) {
+	usleep(2000000);
+	co_coroutine_obj_ring_the_bell(((co_coroutine_obj_t *)param));
+	return NULL;
+}
+
+co_routine_body(test0) {
+	co_routine_start(test0);
+
+	printf("Test 0: x = %d, y = %d\n", *args->x, args->y);
+
+	++(*args->x);
+	++args->y;
+
+	co_yield_return(10);
+
+	{
+		pthread_t sleeper;
+		pthread_create(&sleeper, NULL, waker_thread2, __co_obj);
+	}
+	co_yield_wait();
+
+	printf("Test 0: x = %d, y = %d\n", *args->x, args->y);
+
+	co_yield_return(20);
+
+	co_yield_break();
+}
+
 co_routine_body(test1) {
+	int test0retval;
 	co_routine_start(test1);
 
 	printf("Test 1: x = %d, y = %d\n", args->x, args->y);
@@ -22,6 +53,10 @@ co_routine_body(test1) {
 
 	co_yield_return(10);
 
+	co_foreach_yield(test0retval, test0, (&args->x, args->y), {
+		printf("Test 1: got response %d from test 0\n", test0retval);
+	});
+
 	printf("Test 1: x = %d, y = %d\n", args->x, args->y);
 
 	co_yield_return(20);
@@ -30,7 +65,7 @@ co_routine_body(test1) {
 }
 
 co_routine_body(test2) {
-	co_routine_start(test1);
+	co_routine_start(test2);
 
 	printf("Test 2: x = %d, y = %d\n", args->x, args->y);
 

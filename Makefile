@@ -31,7 +31,7 @@ OBJ := ${SRC:.c=.o}
 DEP := ${SRC:.c=.d}
 OUT := demo
 
-CFLAGS := -std=gnu89 -Wall -Werror -DCO_MULTI_SRC_Q_N=4
+CFLAGS := -std=gnu89 -Wall -Werror
 LDFLAGS :=
 INCLUDES :=
 
@@ -42,10 +42,17 @@ $(OUT_DIR)/$(shell dirname $(OUT))
 
 AUTODEP = -MD -MP -MF $(DEP_DIR)/$*.d
 
+# Behaviour tweaks
+
+CFLAGS += -DCO_MULTI_SRC_Q_N=4
+
 # Configs
 
 ifeq (debug,$(CONFIG))
   CFLAGS += -ggdb
+  CFLAGS += -DCO_DBG_ASSERTIONS=1
+  # Enable for extra debug prints: 
+  # CFLGAS += -DCO_DBG_TRACES=1
 endif
 
 ifeq (release,$(CONFIG))
