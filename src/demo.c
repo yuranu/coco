@@ -4,8 +4,9 @@
 #include <unistd.h>
 
 co_routine_decl(int, test1, int, x, int, y);
-co_routine_decl(int, test0, int *, x, int, y);
+co_routine_decl(int, test0, int, x, int, y);
 co_routine_decl(/* void */, test2, int, x, int, y);
+co_routine_decl(int, test3, int, i);
 
 void *waker_thread(void *param) {
 	usleep(1000000);
@@ -14,17 +15,27 @@ void *waker_thread(void *param) {
 }
 
 void *waker_thread2(void *param) {
-	usleep(2000000);
+	usleep(1000000);
 	co_coroutine_obj_ring_the_bell(((co_coroutine_obj_t *)param));
 	return NULL;
+}
+
+co_routine_body(test3) {
+	co_routine_start(test3);
+	/* This function simply returns all numbers from i to 0 */
+	for (; args->i >= 0; --args->i) {
+		co_yield_return(args->i);
+	}
+
+	co_yield_break();
 }
 
 co_routine_body(test0) {
 	co_routine_start(test0);
 
-	printf("Test 0: x = %d, y = %d\n", *args->x, args->y);
+	fprintf(stderr, "Test 0: x = %d, y = %d\n", args->x, args->y);
 
-	++(*args->x);
+	++args->x;
 	++args->y;
 
 	co_yield_return(10);
@@ -35,9 +46,12 @@ co_routine_body(test0) {
 	}
 	co_yield_wait();
 
-	printf("Test 0: x = %d, y = %d\n", *args->x, args->y);
+	fprintf(stderr, "Test 0: x = %d, y = %d\n", args->x, args->y);
 
 	co_yield_return(20);
+
+	// co_foreach_yield_return(test3, 5);
+	co_foreach_yield_return(test3, 5);
 
 	co_yield_break();
 }
@@ -46,18 +60,17 @@ co_routine_body(test1) {
 	int test0retval;
 	co_routine_start(test1);
 
-	printf("Test 1: x = %d, y = %d\n", args->x, args->y);
+	fprintf(stderr, "Test 1: x = %d, y = %d\n", args->x, args->y);
 
 	++args->x;
 	++args->y;
 
 	co_yield_return(10);
 
-	co_foreach_yield(test0retval, test0, (&args->x, args->y), {
-		printf("Test 1: got response %d from test 0\n", test0retval);
-	});
+	co_foreach_yield(test0retval, test0, (args->x, args->y),
+	                 { fprintf(stderr, "Test 1: got response %d from test 0\n", test0retval); });
 
-	printf("Test 1: x = %d, y = %d\n", args->x, args->y);
+	fprintf(stderr, "Test 1: x = %d, y = %d\n", args->x, args->y);
 
 	co_yield_return(20);
 
@@ -67,7 +80,7 @@ co_routine_body(test1) {
 co_routine_body(test2) {
 	co_routine_start(test2);
 
-	printf("Test 2: x = %d, y = %d\n", args->x, args->y);
+	fprintf(stderr, "Test 2: x = %d, y = %d\n", args->x, args->y);
 
 	++args->x;
 	++args->y;
@@ -79,9 +92,13 @@ co_routine_body(test2) {
 	}
 	co_yield_wait();
 
-	printf("Test 2: x = %d, y = %d\n", args->x, args->y);
+	fprintf(stderr, "Test 2: x = %d, y = %d\n", args->x, args->y);
 
 	co_yield_return();
+
+	if (args->x > 20) {
+		co_foreach_yield(, test2, (0, 1), { fprintf(stderr, "I invoked myself and I liked it!\n"); });
+	}
 
 	co_yield_break();
 }

@@ -52,7 +52,7 @@ ifeq (debug,$(CONFIG))
   CFLAGS += -ggdb
   CFLAGS += -DCO_DBG_ASSERTIONS=1
   # Enable for extra debug prints: 
-  # CFLGAS += -DCO_DBG_TRACES=1
+  # CFLAGS += -DCO_DBG_TRACES=1
 endif
 
 ifeq (release,$(CONFIG))

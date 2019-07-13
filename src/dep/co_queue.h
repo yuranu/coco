@@ -5,6 +5,7 @@
  * @file co_queue.h
  */
 
+#include "co_dbg.h"
 #include "co_types.h"
 
 struct co_queu_e;
@@ -26,6 +27,16 @@ typedef struct co_queu {
 	(co_queue_t) { NULL, NULL }
 
 static __inline__ co_bool_t co_q_empty(co_queue_t *q) { return q->head == NULL; }
+
+static __inline__ co_size_t co_q_len(co_queue_t *q) {
+	int i             = 0;
+	co_queue_e_t *ptr = q->head;
+	while (ptr) {
+		++i;
+		ptr = ptr->next;
+	}
+	return i;
+}
 
 static __inline__ void co_q_enq(co_queue_t *q, co_queue_e_t *elem) {
 	if (q->tail)
@@ -50,9 +61,9 @@ static __inline__ void co_q_deq(co_queue_t *q) {
 }
 
 static __inline__ void co_q_cherry_pick(co_queue_t *q, co_queue_e_t *elem, co_queue_e_t *prev) {
-	if (!prev)
+	if (!prev) {
 		co_q_deq(q);
-	else {
+	} else {
 		prev->next = elem->next;
 		if (q->tail == elem)
 			q->tail = prev;

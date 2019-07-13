@@ -119,6 +119,7 @@
  * @param co_obj Coroutine object funciton parameter name
  * @param ... List of local variables of form [type, name, type, name, ...]
  * @note Only allowed to be called from coroutine context, assumes __co_obj defined.
+ * @todo Implement locals
  */
 #define co_routine_start(fname, ...)                                                                                   \
 	/** @todo Add code that defines local object struct */                                                             \
@@ -171,7 +172,6 @@
  * @param args Optional child invocation args comma separated tuple (a,b,c,...)
  * @param code Inner loop code snippet enclosed in {}
  * @note Only allowed to be called from coroutine context, assumes __co_obj defined.
- * @todo Handle ignored var
  */
 #define co_foreach_yield(var, fname, args, code)                                                                       \
 	co_prepare_child(fname, __co_list_c args);                                                                         \
@@ -180,8 +180,10 @@
 	return CO_RV_YIELD_WAIT;                                   /* And now go to sleep, child will wake us up */        \
 	co_label_checkpoint:                                       /* We are here after child response */                  \
 	if (__co_obj->child) {                                     /* Child not terminated */                              \
-		var = __co_container_of(__co_obj->child, struct co_ctx_tname(fname), obj)->rv; /* Grab the results */          \
-		code;                                                                          /* Invoke user code */          \
+		__co_if_empty(                                                                                                 \
+		    var, ,                                                                                                     \
+		    var = __co_container_of(__co_obj->child, struct co_ctx_tname(fname), obj)->rv); /* Grab the results */     \
+		code;                                                                               /* Invoke user code */     \
 		/* Next iteration */                                                                                           \
 		__co_obj->ip = &&co_label_checkpoint - &&__co_label_start; /* Fix loop if damaged by user code */              \
 		co_q_enq(&__co_obj->wq->fastq.exec, &__co_obj->child->qe);                                                     \
@@ -194,7 +196,6 @@
  * @param fname Coroutine to invoke
  * @param ... Optional child invocation args
  * @note Only allowed to be called from coroutine context, assumes __co_obj defined.
- * @todo Make this actually work
  */
 #define co_foreach_yield_return(fname, ...)                                                                            \
 	co_prepare_child(fname, ##__VA_ARGS__);                                                                            \
@@ -206,8 +207,7 @@
 	if (__co_obj->child) {                                     /* Child not terminated */                              \
 		__co_ctx->rv = __co_container_of(__co_obj->child, struct co_ctx_tname(fname), obj)->rv; /* Grab the results */ \
 		/* Next iteration */                                                                                           \
-		__co_obj->ip    = &&co_label_checkpoint2 - &&__co_label_start; /* Fix loop to start from child submission */   \
-		__co_obj->ready = 1;                                                                                           \
+		__co_obj->ip    = &&co_label_checkpoint_2 - &&__co_label_start; /* Fix loop to start from child submission */  \
 		return CO_RV_YIELD_RETURN;                                                                                     \
 	}
 

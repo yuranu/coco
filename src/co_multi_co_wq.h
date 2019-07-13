@@ -88,8 +88,12 @@ typedef struct co_coroutine_obj {
 	co_ipointer_t ip;
 	/** Pointer to a child coroutine */
 	struct co_coroutine_obj *child;
-	/** Pointer to the parent coroutine */
-	struct co_coroutine_obj *parent;
+	union {
+		/** Pointer to the parent coroutine for sub-routines */
+		struct co_coroutine_obj *parent;
+		/** Pointer to future object for upmost _slowq_ only routines*/
+		co_future_t *future;
+	};
 	/** Debug only trace function name */
 	co_dbg(const char *func_name);
 } co_coroutine_obj_t;
@@ -210,7 +214,6 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 				for_each_filter_queue(task, prev, &q->wait) {
 					co_coroutine_obj_t *coroutine = __co_container_of(task, co_coroutine_obj_t, qe);
 					if (coroutine->ready) { /* Great, pending task became ready */
-						co_dbg_trace("Extracting from wait queue <%s>\n", coroutine->func_name);
 						co_q_cherry_pick(&q->wait, task, prev);
 						goto task_found;
 					}
@@ -227,12 +230,13 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 
 			/* 4. If we are here - we found nothing */
 			if (!b4sleep) {
+				co_dbg_trace("Work queue <%p> feeling sleepy\n", wq);
 				b4sleep = 1;
 				co_atom_set(&wq->bell.wake_me_up, 1); /* Warn everyone we are going to sleep soon */
 			} else {
 				/* Go to sleep */
 				co_errno_t err = co_completion_wait(&wq->bell.bell);
-				//(void)err;
+				(void)err;
 				co_dbg_trace("Work queue <%p> is going to sleep\n", wq);
 				co_assert(!err || err == -EINTR, "Unexpected error while during completion wait %d\n", err);
 				co_dbg_trace("Work queue <%p> is awake\n", wq);
@@ -282,9 +286,9 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
  * @param co Coroutine object pointer
  */
 void static __inline__ co_coroutine_obj_ring_the_bell(co_coroutine_obj_t *co) {
+	co->ready = 1;
 	if (co_atom_cmpxchg(&co->wq->bell.wake_me_up, 1, 0) == 1)
-		co->ready = 1;
-	co_completion_done(&co->wq->bell.bell);
+		co_completion_done(&co->wq->bell.bell);
 }
 
 #endif /*CO_MULTI_CO_WQ_H*/

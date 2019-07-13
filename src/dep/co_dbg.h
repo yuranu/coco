@@ -37,6 +37,10 @@
  */
 #define co_dbg(expr) __co_if_empty(CO_DBG_TRACES_, , expr)
 
-#define co_dbg_trace(...) co_dbg(fprintf(stderr, ">>> "__VA_ARGS__));
+#define co_dbg_trace(...)                                                                                              \
+	co_dbg({                                                                                                           \
+		fprintf(stderr, ">>> "__VA_ARGS__);                                                                            \
+		fflush(stderr);                                                                                                \
+	})
 
 #endif /*DEP__CO_ASSERT_H*/
