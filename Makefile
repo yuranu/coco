@@ -3,7 +3,7 @@ MAKEFLAGS += --no-builtin-rules
 MAKEFLAGS += --no-builtin-variables
 .SUFFIXES:
 
-.PHONY: clean all
+.PHONY: clean all mkdir
 .DEFAULT_GOAL := all
 
 # Compiler
@@ -35,11 +35,6 @@ CFLAGS := -std=gnu89 -Wall -Werror
 LDFLAGS :=
 INCLUDES :=
 
-MAKE_DIRS := \
-$(DEP_DIR)/$(shell dirname $(DEP)) \
-$(OBJ_DIR)/$(shell dirname $(OBJ)) \
-$(OUT_DIR)/$(shell dirname $(OUT))
-
 AUTODEP = -MD -MP -MF $(DEP_DIR)/$*.d
 
 # Behaviour tweaks
@@ -64,16 +59,29 @@ ifeq (pthread, $(THREADS_CONFIG))
   LDFLAGS += -pthread
 endif
 
+# Macros
+COMPILE = $(CC) $(AUTODEP) $(INCLUDES) $(CFLAGS)
+LINK    = $(CC) $(LDFLAGS)
+
+define builddir
+  $(shell echo $($1) | xargs -d ' ' -I{} echo $($1_DIR)/{})
+endef
+
+define multi_dirname
+	$(shell echo $($1) | xargs -d ' ' -I{} dirname {})
+endef
+
 # Targets
 
-$(MAKE_DIRS):
-	$(TRACE)mkdir -p $@
+mkdir:
+	$(TRACE)mkdir -p $(call multi_dirname,MAKE_DIRS)
 
-$(OUT_DIR)/$(OUT): $(OBJ_DIR)/$(OBJ)
-	$(TRACE)$(CC) $(LDFLAGS) $^ -o $@
-
-$(OBJ_DIR)/%.o: %.c Makefile | $(MAKE_DIRS)
-	$(TRACE)$(CC) $(AUTODEP) $(INCLUDES) $(CFLAGS) -c $< -o $@
+# Binary generation
+$(OUT_DIR)/$(OUT): MAKE_DIRS = $(call builddir,OBJ) $(call builddir,DEP) $(call builddir,OUT)
+$(OUT_DIR)/$(OUT): $(call builddir,OBJ)
+	$(TRACE)$(LINK) $< -o $@
+$(OBJ_DIR)/%.o: %.c Makefile | mkdir
+	$(TRACE)$(COMPILE) -c $< -o $@
 
 all: $(OUT_DIR)/$(OUT)
 
