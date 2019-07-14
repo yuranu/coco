@@ -126,20 +126,6 @@ typedef struct co_coroutine_obj {
 } co_coroutine_obj_t;
 
 /**
- * Exec - wait queue objectg
- * Simply encapsulating a pair of queues - exec and wait, for ease since this
- * pattern is used multiple times.
- */
-typedef struct co_exec_wait_q {
-	co_queue_t exec;
-	co_queue_t wait;
-	co_allocator_t *alloc;
-} co_exec_wait_q_t;
-
-#define co_co_exec_wait_q_init(alloc)                                                                                  \
-	(co_exec_wait_q_t) { co_q_init(), co_q_init(), alloc }
-
-/**
  * The coroutines work queue object
  */
 typedef struct co_multi_co_wq {
@@ -158,14 +144,44 @@ typedef struct co_multi_co_wq {
 
 	/** Slow input queue - anyone can write here */
 	co_multi_src_q_t inputq;
-	/** Fast execution - only non root coroutines get here */
-	co_exec_wait_q_t fastq;
-	/** Slow execution - root coroutines coroutines get here*/
-	co_exec_wait_q_t slowq;
-
+	struct {
+		/** Fast allocator - for allocation from coroutine wq thread, can be lockless */
+		co_allocator_t *fast_alloc;
+		/** Slow allocator - for allocation from any thread, must have locks */
+		co_allocator_t *slow_alloc;
+	};
+	struct {
+		/** Execution queue */
+		co_queue_t execq;
+		/** Wait queueu */
+		co_queue_t waitq;
+	};
 	/** Indicator to terminate the main loop */
 	co_bool_t terminate;
 } co_multi_co_wq_t;
+
+/**
+ * Allocate memory on given allocator
+ * @param wq Coroutine work queue pointer
+ * @param type Either `fast` or `slow`
+ * @param size Memory size
+ * @return Allocated pointer or NULL
+ */
+#define co_multi_co_wq_alloc(wq, type, size) wq->type##_alloc->alloc(wq->type##_alloc, size)
+#define co_multi_co_wq_alloc_fast(wq, size) co_multi_co_wq_alloc(wq, fast, size)
+#define co_multi_co_wq_alloc_slow(wq, size) co_multi_co_wq_alloc(wq, slow, size)
+
+/**
+ * Free memory allocated for coroutine
+ * @param wq Coroutine work queue pointer
+ * @param task Queue element of coroutine wq representing a coroutine
+ */
+static __inline__ void co_multi_co_wq_free(co_multi_co_wq_t *wq, co_queue_e_t *task) {
+	if (co_routine_flag_test(__co_container_of(task, co_coroutine_obj_t, qe)->flags, CO_FLAG_SLOW_ALLOC))
+		wq->slow_alloc->free(wq->slow_alloc, task);
+	else
+		wq->fast_alloc->free(wq->slow_alloc, task);
+}
 
 /**
  * Initialize coroutine work queue
@@ -175,7 +191,14 @@ typedef struct co_multi_co_wq {
  */
 static __inline__ co_errno_t co_multi_co_wq_init(co_multi_co_wq_t *wq, co_size_t size, co_allocator_t *fast_alloc,
                                                  co_allocator_t *slow_alloc) {
-	int rv = co_completion_init(&wq->bell.bell);
+	int rv;
+	*wq = (co_multi_co_wq_t){.bell.wake_me_up = co_atom_init(0),
+	                         .execq           = co_q_init(),
+	                         .waitq           = co_q_init(),
+	                         .fast_alloc      = fast_alloc,
+	                         .slow_alloc      = slow_alloc,
+	                         .terminate       = 0};
+	rv  = co_completion_init(&wq->bell.bell);
 	if (rv)
 		return rv;
 	rv = co_multi_src_q_init(&wq->inputq, size);
@@ -183,10 +206,6 @@ static __inline__ co_errno_t co_multi_co_wq_init(co_multi_co_wq_t *wq, co_size_t
 		co_completion_destroy(&wq->bell.bell);
 		return rv;
 	}
-	wq->bell.wake_me_up = co_atom_init(0);
-	wq->fastq           = co_co_exec_wait_q_init(fast_alloc);
-	wq->slowq           = co_co_exec_wait_q_init(slow_alloc);
-	wq->terminate       = 0;
 	return 0;
 }
 
@@ -199,15 +218,10 @@ static __inline__ co_errno_t co_multi_co_wq_init(co_multi_co_wq_t *wq, co_size_t
 static __inline__ void co_multi_co_wq_destroy(co_multi_co_wq_t *wq) {
 	void *task;
 
-	for_each_drain_queue(task, &wq->fastq.exec, co_q_peek, co_q_deq) { wq->fastq.alloc->free(wq->fastq.alloc, task); }
-	for_each_drain_queue(task, &wq->fastq.wait, co_q_peek, co_q_deq) { wq->fastq.alloc->free(wq->fastq.alloc, task); }
+	for_each_drain_queue(task, &wq->execq, co_q_peek, co_q_deq) { co_multi_co_wq_free(wq, task); }
+	for_each_drain_queue(task, &wq->waitq, co_q_peek, co_q_deq) { co_multi_co_wq_free(wq, task); }
 
-	for_each_drain_queue(task, &wq->slowq.exec, co_q_peek, co_q_deq) { wq->slowq.alloc->free(wq->slowq.alloc, task); }
-	for_each_drain_queue(task, &wq->slowq.wait, co_q_peek, co_q_deq) { wq->slowq.alloc->free(wq->slowq.alloc, task); }
-
-	for_each_drain_queue(task, &wq->inputq, co_multi_src_q_peek, co_multi_src_q_deq) {
-		wq->slowq.alloc->free(wq->slowq.alloc, task);
-	}
+	for_each_drain_queue(task, &wq->inputq, co_multi_src_q_peek, co_multi_src_q_deq) { co_multi_co_wq_free(wq, task); }
 
 	co_multi_src_q_destroy(&wq->inputq);
 	co_completion_destroy(&wq->bell.bell);
@@ -221,34 +235,27 @@ static __inline__ void co_multi_co_wq_destroy(co_multi_co_wq_t *wq) {
  */
 static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 	co_bool_t b4sleep = 0; /* Whether or not we are planning to go to sleep next round */
-	int i             = 0;
 	while (!wq->terminate) {
 		co_queue_e_t *task = NULL; /* Attempt to get a new taks */
-		co_exec_wait_q_t *q;
 		do {
 			/* 1. Start with draining the exec queues */
-			for (i = 0, q = &wq->fastq; i < 2; ++i, q = &wq->slowq) {
-				task = co_q_peek(&q->exec);
-				if (task) {
-					co_q_deq(&q->exec);
+			task = co_q_peek(&wq->execq);
+			if (task) {
+				co_q_deq(&wq->execq);
+				goto task_found;
+			}
+
+			/* 2. Now the wait queues */
+			co_queue_e_t *prev;
+			for_each_filter_queue(task, prev, &wq->waitq) {
+				co_coroutine_obj_t *coroutine = __co_container_of(task, co_coroutine_obj_t, qe);
+				if (co_routine_flag_test(coroutine->flags, CO_FLAG_READY)) { /* Great, pending task became ready */
+					co_q_cherry_pick(&wq->waitq, task, prev);
 					goto task_found;
 				}
 			}
 
-			/* 2. Now the wait queues */
-			for (i = 0, q = &wq->fastq; i < 2; ++i, q = &wq->slowq) {
-				co_queue_e_t *prev;
-				for_each_filter_queue(task, prev, &q->wait) {
-					co_coroutine_obj_t *coroutine = __co_container_of(task, co_coroutine_obj_t, qe);
-					if (co_routine_flag_test(coroutine->flags, CO_FLAG_READY)) { /* Great, pending task became ready */
-						co_q_cherry_pick(&q->wait, task, prev);
-						goto task_found;
-					}
-				}
-			}
-
 			/* 3. Now the input queue */
-			q    = &wq->slowq;
 			task = co_multi_src_q_peek(&wq->inputq);
 			if (task) {
 				co_multi_src_q_deq(&wq->inputq);
@@ -289,16 +296,16 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 						coroutine->parent->child = NULL;
 						co_routine_flag_set(&coroutine->parent->flags, CO_FLAG_READY);
 					}
-					q->alloc->free(q->alloc, task);
+					co_multi_co_wq_free(wq, task);
 					break;
 				case CO_RV_YIELD_WAIT:
-					co_q_enq(&q->wait, task); /* Just move to wait queue */
+					co_q_enq(&wq->waitq, task); /* Just move to wait queue */
 					break;
 				case CO_RV_YIELD_RETURN:
 					if (coroutine->parent) /* If it is a child coroutine, notify parent it has intermediate results */
 						co_routine_flag_set(&coroutine->parent->flags, CO_FLAG_READY);
 					else
-						co_q_enq(&q->exec, task); /* Else reschedule */
+						co_q_enq(&wq->execq, task); /* Else reschedule */
 					break;
 				case CO_RV_YIELD_ERROR:
 					co_assert(0, "Unexpected error returned from coroutine\n");

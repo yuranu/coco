@@ -48,7 +48,7 @@
 
 /**
  * Prepare child coroutine object for execution
- * Uses fastq for memory allocation
+ * Uses fast allocator for memory allocation
  * @param fname Child coroutine to prepare
  * @param ... Optional child arguments
  * @note Only allowed to be called from coroutine context, assumes __co_obj defined.
@@ -56,9 +56,10 @@
 #define co_prepare_child(fname, ...)                                                                                   \
 	({                                                                                                                 \
 		struct co_ctx_tname(fname) *__co_child_obj =                                                                   \
-		    __co_obj->wq->fastq.alloc->alloc(__co_obj->wq->fastq.alloc, sizeof(struct co_ctx_tname(fname)));           \
+		    co_multi_co_wq_alloc_fast(__co_obj->wq, sizeof(struct co_ctx_tname(fname)));                               \
 		if (!__co_child_obj) /* ENOMEM */                                                                              \
 			__co_handle_critical_error();                                                                              \
+		co_routine_flag_clear(&__co_obj->flags, CO_FLAG_SLOW_ALLOC);                                                   \
 		*__co_child_obj            = co_routine_ctx_init(fname, __co_obj->wq, ##__VA_ARGS__); /* Pass the args */      \
 		__co_child_obj->obj.parent = __co_obj;             /* Link child to parent */                                  \
 		__co_obj->child            = &__co_child_obj->obj; /* Link parent to child */                                  \
@@ -66,16 +67,16 @@
 
 #define co_routine_invoke(fname, wq, ...)                                                                              \
 	({                                                                                                                 \
-		co_errno_t __co_rv = 0;                                                                                        \
-		struct co_ctx_tname(fname) *__co_obj =                                                                         \
-		    (wq)->slowq.alloc->alloc((wq)->slowq.alloc, sizeof(struct co_ctx_tname(fname)));                           \
+		co_errno_t __co_rv                   = 0;                                                                      \
+		struct co_ctx_tname(fname) *__co_obj = co_multi_co_wq_alloc_slow((wq), sizeof(struct co_ctx_tname(fname)));    \
 		if (!__co_obj)                                                                                                 \
 			__co_rv = -ENOMEM;                                                                                         \
+		co_routine_flag_set(&__co_obj->obj.flags, CO_FLAG_SLOW_ALLOC);                                                 \
 		if (!__co_rv) {                                                                                                \
 			*__co_obj = co_routine_ctx_init(fname, (wq), ##__VA_ARGS__);                                               \
 			__co_rv   = co_multi_src_q_enq(&(wq)->inputq, &__co_obj->obj.qe);                                          \
 			if (__co_rv)                                                                                               \
-				(wq)->slowq.alloc->free((wq)->slowq.alloc, __co_obj);                                                  \
+				co_multi_co_wq_free(wq, &__co_obj->obj.qe);                                                            \
 		}                                                                                                              \
 		__co_rv;                                                                                                       \
 	})
@@ -177,7 +178,7 @@
 #define co_foreach_yield(var, fname, args, code)                                                                       \
 	co_prepare_child(fname, __co_list_c args);                                                                         \
 	__co_obj->ip = &&co_label_checkpoint - &&__co_label_start; /* Prepare loop */                                      \
-	co_q_enq(&__co_obj->wq->fastq.exec, &__co_obj->child->qe); /* Enqueue the child, we can use the fastq for that */  \
+	co_q_enq(&__co_obj->wq->execq, &__co_obj->child->qe);      /* Enqueue the child, we can use the execq for that */  \
 	return CO_RV_YIELD_WAIT;                                   /* And now go to sleep, child will wake us up */        \
 	co_label_checkpoint:                                       /* We are here after child response */                  \
 	if (__co_obj->child) {                                     /* Child not terminated */                              \
@@ -187,7 +188,7 @@
 		code;                                                                               /* Invoke user code */     \
 		/* Next iteration */                                                                                           \
 		__co_obj->ip = &&co_label_checkpoint - &&__co_label_start; /* Fix loop if damaged by user code */              \
-		co_q_enq(&__co_obj->wq->fastq.exec, &__co_obj->child->qe);                                                     \
+		co_q_enq(&__co_obj->wq->execq, &__co_obj->child->qe);                                                          \
 		return CO_RV_YIELD_WAIT;                                                                                       \
 	}
 
@@ -202,7 +203,7 @@
 	co_prepare_child(fname, ##__VA_ARGS__);                                                                            \
 	co_label_checkpoint_2:                                                                                             \
 	__co_obj->ip = &&co_label_checkpoint - &&__co_label_start; /* Prepare loop */                                      \
-	co_q_enq(&__co_obj->wq->fastq.exec, &__co_obj->child->qe); /* Enqueue the child, we can use the fastq for that */  \
+	co_q_enq(&__co_obj->wq->execq, &__co_obj->child->qe);      /* Enqueue the child, we can use the execq for that */  \
 	return CO_RV_YIELD_WAIT;                                   /* And now go to sleep, child will wake us up */        \
 	co_label_checkpoint:                                       /* We are here after child response */                  \
 	if (__co_obj->child) {                                     /* Child not terminated */                              \
