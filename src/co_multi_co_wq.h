@@ -11,119 +11,13 @@
  *
  */
 
+#include "co_coroutine_object.h"
 #include "co_multi_src_q.h"
 #include "dep/co_allocator.h"
 #include "dep/co_dbg.h"
 #include "dep/co_queue.h"
 #include "dep/co_sync.h"
 #include "dep/co_types.h"
-
-/**
- * ### Memory allocation management pitfall
- *
- * Memory allocation may become a bottleneck if poorly implemented. Problem is, that
- * each coroutine start requires creating an object, hence memory allocation.
- *
- * The idea is to delegate all memory allocations to a separate module, that can
- * be adjusted with accordance to specific needs.
- *
- * There is an assumption that root coroutine invocation may be a little slow, and this we
- * will tolerate. When a user invokes coroutine, he knows it will not execute immidiately,
- * rather start in a different thread.
- *
- * If, however, a coroutine invokes inner coroutine, there is no reason for it to be slow,
- * as we are in essentially a single threaded system.
- *
- * Hence we will differenciate between objects allocated by external allocator, and
- * objects allocated from a coroutine context, this allows optimizations to be done
- * based on single threaded execution properties of coroutines.
- *
- */
-
-/**
- * Future returned to coroutine original caller.
- * @todo Implement full future functionality
- */
-typedef struct co_future {
-} co_future_t;
-
-struct co_coroutine_obj;
-struct co_multi_co_wq;
-
-/**
- * Possible exit code of coroutine
- */
-typedef enum co_yield_rv {
-	/** Execution terminated. */
-	CO_RV_YIELD_BREAK,
-	/** Not terminated, still running asynchronously */
-	CO_RV_YIELD_WAIT,
-	/** Terminated cycle, but there are more cycles */
-	CO_RV_YIELD_RETURN,
-	/** Unexpected error during the execution */
-	CO_RV_YIELD_ERROR
-} co_yield_rv_t;
-
-/**
- * Coroutine instruction pointer
- * Specifies the point from where to resume coroutine
- */
-typedef co_size_t co_ipointer_t;
-
-#define CO_IPOINTER_START (0)
-
-/**
- * Coroutine flags bitmap
- */
-typedef int co_routine_flags_bmp_t;
-
-/**
- * All possible coroutine flags values
- */
-typedef enum co_routine_flag {
-	/** Execution results are ready */
-	CO_FLAG_READY,
-	/** Corotine object was created by slow allocator */
-	CO_FLAG_SLOW_ALLOC
-} co_routine_flag_t;
-
-#define co_routine_flags_init() ((co_routine_flags_bmp_t)0)
-
-static __inline__ int co_routine_flag_test(co_routine_flags_bmp_t flags, co_routine_flag_t flag) {
-	return flags & (1 << flag);
-}
-static __inline__ void co_routine_flag_set(co_routine_flags_bmp_t *flags, co_routine_flag_t flag) {
-	*flags |= (1 << flag);
-}
-static __inline__ void co_routine_flag_clear(co_routine_flags_bmp_t *flags, co_routine_flag_t flag) {
-	*flags &= ~(1 << flag);
-}
-
-/**
- * Generic coroutine object
- */
-typedef struct co_coroutine_obj {
-	/** Each object is actually a queue element */
-	co_queue_e_t qe;
-	/** Pointes back to work queue. */
-	struct co_multi_co_wq *wq;
-	/** The pointer to the coroutine function */
-	co_yield_rv_t (*func)(struct co_coroutine_obj *);
-	/** Resume position inside coroutine function */
-	co_ipointer_t ip;
-	/** Bitmap with various co_routine flags */
-	co_routine_flags_bmp_t flags;
-	/** Pointer to a child coroutine */
-	struct co_coroutine_obj *child;
-	union {
-		/** Pointer to the parent coroutine for sub-routines only */
-		struct co_coroutine_obj *parent;
-		/** Pointer to future object for top level only routines*/
-		co_future_t *future;
-	};
-	/** Debug only trace function name */
-	co_dbg(const char *func_name);
-} co_coroutine_obj_t;
 
 /**
  * The coroutines work queue object
@@ -309,6 +203,8 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 					break;
 				case CO_RV_YIELD_ERROR:
 					co_assert(0, "Unexpected error returned from coroutine\n");
+				case CO_RV_YIELD_WAIT_COND:
+					co_assert(0, "Not implemented yet\n");
 			}
 		}
 	}
@@ -317,12 +213,11 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 
 /**
  * Activate the bell event of work queue
- * @param co Coroutine object pointer
+ * @param co Coroutine work queue pointer
  */
-void static __inline__ co_coroutine_obj_ring_the_bell(co_coroutine_obj_t *co) {
-	co_routine_flag_set(&co->flags, CO_FLAG_READY);
-	if (co_atom_cmpxchg(&co->wq->bell.wake_me_up, 1, 0) == 1)
-		co_completion_done(&co->wq->bell.bell);
+void static __inline__ co_multi_co_wq_ring_the_bell(co_multi_co_wq_t *wq) {
+	if (co_atom_cmpxchg(&wq->bell.wake_me_up, 1, 0) == 1)
+		co_completion_done(&wq->bell.bell);
 }
 
 #endif /*CO_MULTI_CO_WQ_H*/
