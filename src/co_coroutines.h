@@ -34,9 +34,9 @@
  */
 #define co_routine_ctx_init(fname, wqptr, ...)                                                                         \
 	(struct co_ctx_tname(fname)) {                                                                                     \
-		.obj.wq = wqptr, .obj.ready = 0, .obj.func = co_body_fname(fname), .obj.ip = CO_IPOINTER_START,                \
-		.obj.child = NULL, .obj.parent = NULL, .args = {__co_list_c(__VA_ARGS__)}, .locs_ptr = NULL,                   \
-		co_dbg(.obj.func_name = __co_stringify(fname))                                                                 \
+		.obj.wq = wqptr, .obj.flags = co_routine_flags_init(), .obj.func = co_body_fname(fname),                       \
+		.obj.ip = CO_IPOINTER_START, .obj.child = NULL, .obj.parent = NULL, .args = {__co_list_c(__VA_ARGS__)},        \
+		.locs_ptr = NULL, co_dbg(.obj.func_name = __co_stringify(fname))                                               \
 	}
 
 /**
@@ -128,7 +128,8 @@
 	__co_if_empty(__VA_ARGS__, , struct co_locs_tname(fname) *locs = __co_ctx->locs_ptr);                              \
 	/** @todo Add code that initializes locals object */                                                               \
 	__co_label_start:                                                                                                  \
-	__co_obj->ready = 0; /* Coroutine always assumes results not ready, and tries to prove this wrong */               \
+	/* Coroutine always assumes results not ready, and tries to prove this wrong */                                    \
+	co_routine_flag_clear(&__co_obj->flags, CO_FLAG_READY);                                                            \
 	if (__co_obj->ip != CO_IPOINTER_START)                                                                             \
 		goto *(&&__co_label_start + __co_obj->ip);
 
@@ -207,7 +208,7 @@
 	if (__co_obj->child) {                                     /* Child not terminated */                              \
 		__co_ctx->rv = __co_container_of(__co_obj->child, struct co_ctx_tname(fname), obj)->rv; /* Grab the results */ \
 		/* Next iteration */                                                                                           \
-		__co_obj->ip    = &&co_label_checkpoint_2 - &&__co_label_start; /* Fix loop to start from child submission */  \
+		__co_obj->ip = &&co_label_checkpoint_2 - &&__co_label_start; /* Fix loop to start from child submission */     \
 		return CO_RV_YIELD_RETURN;                                                                                     \
 	}
 

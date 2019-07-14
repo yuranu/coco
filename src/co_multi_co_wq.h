@@ -73,6 +73,33 @@ typedef co_size_t co_ipointer_t;
 #define CO_IPOINTER_START (0)
 
 /**
+ * Coroutine flags bitmap
+ */
+typedef int co_routine_flags_bmp_t;
+
+/**
+ * All possible coroutine flags values
+ */
+typedef enum co_routine_flag {
+	/** Execution results are ready */
+	CO_FLAG_READY,
+	/** Corotine object was created by slow allocator */
+	CO_FLAG_SLOW_ALLOC
+} co_routine_flag_t;
+
+#define co_routine_flags_init() ((co_routine_flags_bmp_t)0)
+
+static __inline__ int co_routine_flag_test(co_routine_flags_bmp_t flags, co_routine_flag_t flag) {
+	return flags & (1 << flag);
+}
+static __inline__ void co_routine_flag_set(co_routine_flags_bmp_t *flags, co_routine_flag_t flag) {
+	*flags |= (1 << flag);
+}
+static __inline__ void co_routine_flag_clear(co_routine_flags_bmp_t *flags, co_routine_flag_t flag) {
+	*flags &= ~(1 << flag);
+}
+
+/**
  * Generic coroutine object
  */
 typedef struct co_coroutine_obj {
@@ -80,18 +107,18 @@ typedef struct co_coroutine_obj {
 	co_queue_e_t qe;
 	/** Pointes back to work queue. */
 	struct co_multi_co_wq *wq;
-	/** Is async execution of give coroutine ready? */
-	co_bool_t ready;
 	/** The pointer to the coroutine function */
 	co_yield_rv_t (*func)(struct co_coroutine_obj *);
 	/** Resume position inside coroutine function */
 	co_ipointer_t ip;
+	/** Bitmap with various co_routine flags */
+	co_routine_flags_bmp_t flags;
 	/** Pointer to a child coroutine */
 	struct co_coroutine_obj *child;
 	union {
-		/** Pointer to the parent coroutine for sub-routines */
+		/** Pointer to the parent coroutine for sub-routines only */
 		struct co_coroutine_obj *parent;
-		/** Pointer to future object for upmost _slowq_ only routines*/
+		/** Pointer to future object for top level only routines*/
 		co_future_t *future;
 	};
 	/** Debug only trace function name */
@@ -213,7 +240,7 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 				co_queue_e_t *prev;
 				for_each_filter_queue(task, prev, &q->wait) {
 					co_coroutine_obj_t *coroutine = __co_container_of(task, co_coroutine_obj_t, qe);
-					if (coroutine->ready) { /* Great, pending task became ready */
+					if (co_routine_flag_test(coroutine->flags, CO_FLAG_READY)) { /* Great, pending task became ready */
 						co_q_cherry_pick(&q->wait, task, prev);
 						goto task_found;
 					}
@@ -260,7 +287,7 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 				case CO_RV_YIELD_BREAK:
 					if (coroutine->parent) { /* If it is a child coroutine, notify parent it terminated */
 						coroutine->parent->child = NULL;
-						coroutine->parent->ready = 1;
+						co_routine_flag_set(&coroutine->parent->flags, CO_FLAG_READY);
 					}
 					q->alloc->free(q->alloc, task);
 					break;
@@ -269,7 +296,7 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 					break;
 				case CO_RV_YIELD_RETURN:
 					if (coroutine->parent) /* If it is a child coroutine, notify parent it has intermediate results */
-						coroutine->parent->ready = 1;
+						co_routine_flag_set(&coroutine->parent->flags, CO_FLAG_READY);
 					else
 						co_q_enq(&q->exec, task); /* Else reschedule */
 					break;
@@ -286,7 +313,7 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
  * @param co Coroutine object pointer
  */
 void static __inline__ co_coroutine_obj_ring_the_bell(co_coroutine_obj_t *co) {
-	co->ready = 1;
+	co_routine_flag_set(&co->flags, CO_FLAG_READY);
 	if (co_atom_cmpxchg(&co->wq->bell.wake_me_up, 1, 0) == 1)
 		co_completion_done(&co->wq->bell.bell);
 }
