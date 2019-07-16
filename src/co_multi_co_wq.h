@@ -61,7 +61,7 @@ typedef struct co_multi_co_wq {
  * @param size Memory size
  * @return Allocated pointer or NULL
  */
-#define co_multi_co_wq_alloc(wq, type, size) wq->type##_alloc->alloc(wq->type##_alloc, size)
+#define co_multi_co_wq_alloc(wq, type, size) (wq)->type##_alloc->alloc((wq)->type##_alloc, size)
 #define co_multi_co_wq_alloc_fast(wq, size) co_multi_co_wq_alloc(wq, fast, size)
 #define co_multi_co_wq_alloc_slow(wq, size) co_multi_co_wq_alloc(wq, slow, size)
 
@@ -130,84 +130,86 @@ static __inline__ void co_multi_co_wq_destroy(co_multi_co_wq_t *wq) {
 static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 	co_bool_t b4sleep = 0; /* Whether or not we are planning to go to sleep next round */
 	while (!wq->terminate) {
-		co_list_e_t *task = NULL; /* Attempt to get a new taks */
 		do {
-
+			co_size_t initial_size = wq->execq.count;
+			int i;
 			/* 1. Start with draining the exec queues */
-			task = co_q_peek(&wq->execq);
-			if (task) {
-				co_q_deq(&wq->execq);
-				goto task_found;
-			}
+			for (i = 0; i < initial_size; ++i) {
+				co_list_e_t *task             = co_q_peek(&wq->execq); /* Attempt to get a new taks */
+				co_coroutine_obj_t *coroutine = __co_container_of(task, co_coroutine_obj_t, qe); /* Extract coroutine */
+				co_yield_rv_t co_rv;
 
-			/* 2. Now the wait queues */
-			co_list_e_t *prev;
-			for_each_filter_list(task, prev, &wq->waitq) {
-				co_coroutine_obj_t *coroutine = __co_container_of(task, co_coroutine_obj_t, qe);
-				if (co_routine_flag_test(coroutine->flags, CO_FLAG_READY)) { /* Great, pending task became ready */
-					co_q_cherry_pick(&wq->waitq, task, prev);
-					goto task_found;
+				co_q_deq(&wq->execq);
+				co_dbg_trace("Going to call <%s>\n", coroutine->func_name);
+				co_rv = coroutine->func(coroutine);
+				co_dbg_trace("Call result: <%d>\n", co_rv);
+				switch (co_rv) {
+					case CO_RV_YIELD_RETURN:
+						while (coroutine->await) { /* If it is a child coroutine, reschedule its parents. */
+							co_list_e_t *pending = coroutine->await;
+							coroutine->await     = pending->next;
+							co_q_enq(&wq->execq, pending);
+						}
+						co_q_enq(&wq->execq, task); /* Reschedule */
+						goto break_loop;
+					case CO_RV_YIELD_BREAK:
+						while (coroutine->await) { /* If it is a child coroutine, reschedule its parents. */
+							co_list_e_t *pending = coroutine->await;
+							coroutine->await     = pending->next;
+							co_q_enq(&wq->execq, pending);
+							co_routine_flag_set(&__co_container_of(pending, co_coroutine_obj_t, qe)->flags,
+							                    CO_FLAG_CHILD_TERM); /* Notify parents on termination */
+						}
+						co_multi_co_wq_free(wq, task); /* Free */
+						goto break_loop;
+					case CO_RV_YIELD_AWAIT:
+						/* Do nothing, not my responsibility now */
+						goto break_loop;
+					case CO_RV_YIELD_COND_WAIT:
+						co_q_enq(&wq->execq, task); /* Simply reschedule to re-test later, try next task */
+						/* Do not reset b4sleep */
+						break;
+					case CO_RV_YIELD_ERROR:
+						co_assert(0, "Unexpected error returned from coroutine\n");
+						break;
 				}
 			}
 
-			/* 3. Now the input queue */
-			task = co_multi_src_q_peek(&wq->inputq);
-			if (task) {
-				co_multi_src_q_deq(&wq->inputq);
-				goto task_found;
+		break_loop:
+
+			/* Do not continue to read input if we may have more stuff to do */
+			if (i < initial_size) {
+				b4sleep = 0;
+				break;
+			}
+			/* Else - done nothing this turn, try new inputs */
+
+			/* 2. Now the input queue */ {
+				co_list_e_t *task = co_multi_src_q_peek(&wq->inputq);
+				if (task) {
+					co_multi_src_q_deq(&wq->inputq);
+					co_q_enq(&wq->execq, task);
+					break; /* Don't continue any further - analyze what we have */
+				}
 			}
 
-			/* 4. If we are here - we found nothing */
+			/* 3. If we are here - we found nothing */
 			if (!b4sleep) {
-				co_dbg_trace("Work queue <%p> feeling sleepy\n", wq);
+				co_dbg_trace("Work queue <%p> is feeling sleepy\n", wq);
 				b4sleep = 1;
 				co_atom_set(&wq->bell.wake_me_up, 1); /* Warn everyone we are going to sleep soon */
 			} else {
 				/* Go to sleep */
-				co_errno_t err = co_completion_wait(&wq->bell.bell);
-				(void)err;
+				co_errno_t err;
 				co_dbg_trace("Work queue <%p> is going to sleep\n", wq);
+				err = co_completion_wait(&wq->bell.bell);
+				(void)err;
 				co_assert(!err || err == -EINTR, "Unexpected error while during completion wait %d\n", err);
 				co_dbg_trace("Work queue <%p> is awake\n", wq);
 				/* Good morning beautiful */
 				b4sleep = 0;
 			}
 		} while (0);
-	task_found:
-		if (task != NULL) {
-			/* Attempt to execute the task */
-			co_coroutine_obj_t *coroutine = __co_container_of(task, co_coroutine_obj_t, qe);
-			co_yield_rv_t co_rv;
-
-			b4sleep = 0; /* No sleep for next round */
-
-			co_dbg_trace("Going to call <%s>\n", coroutine->func_name);
-			co_rv = coroutine->func(coroutine);
-			co_dbg_trace("Call result: <%d>\n", co_rv);
-
-			switch (co_rv) {
-				case CO_RV_YIELD_BREAK:
-					if (coroutine->await) { /* If it is a child coroutine, notify parent it terminated */
-						coroutine->await->child = NULL;
-						co_routine_flag_set(&coroutine->await->flags, CO_FLAG_READY);
-					}
-					co_multi_co_wq_free(wq, task);
-					break;
-				case CO_RV_YIELD_WAIT:
-					co_q_enq(&wq->waitq, task); /* Just move to wait queue */
-					break;
-				case CO_RV_YIELD_RETURN:
-					if (coroutine->await) /* If it is a child coroutine, notify parent it has intermediate results */
-						co_routine_flag_set(&coroutine->await->flags, CO_FLAG_READY);
-					else
-						co_q_enq(&wq->execq, task); /* Else reschedule */
-					break;
-				case CO_RV_YIELD_ERROR:
-					co_assert(0, "Unexpected error returned from coroutine\n");
-				case CO_RV_YIELD_WAIT_COND:
-					co_assert(0, "Not implemented yet\n");
-			}
-		}
 	}
 	return 0;
 }

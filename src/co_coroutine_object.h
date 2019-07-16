@@ -12,13 +12,6 @@
 #include "dep/co_sync.h"
 #include "dep/co_types.h"
 
-/**
- * Future returned to coroutine original caller.
- * @todo Implement full future functionality
- */
-typedef struct co_future {
-} co_future_t;
-
 struct co_coroutine_obj;
 struct co_multi_co_wq;
 
@@ -26,33 +19,7 @@ struct co_multi_co_wq;
  * Possible exit code of coroutine
  * A coroutine can have different exit states.
  *
- * First - RETURN. This means the coroutine returned some intermediate results.
- * Only if exit status is RETURN, it is allowed to check coroutine RV object.
- * After this exit status, it can be re-executed immediately or any other time.
- *
- * Next, BREAK. This means end of coroutine execution. The expected response for
- * this return value is resource deallocation. Trying to re-execute it is
- * unexpected behaviour.
- *
- * Next, WAIT. This means the coroutine waits for external thread to report
- * completion. It comes with conjuction with READY flag. While flag is off,
- * it is prohibited to re-execute this coroutine. It can be completed
- * by ringing the bell on the coroutine, which can be done by any thread,
- * or simply by turning READY flag on from other coroutine context.
- * As soon as READY flag is on, it is allowed to re-execute the coroutine.
- *
- * Next, WAIT_COND. This means coroutine waits for a condition to fulfill,
- * but it does not rely on any flags unlike WAIT. Rather, condition is tested
- * by re-executing the coroutine. After re-execution, it can either return
- * or WAIT_COND again or continue execution to any other state.
- *
- * Last is ERROR. This indicates a critical error, that system cannot recover
- * from. For now it only happens on failure to allocate resources for a
- * task AFTER it already began execution process. Logaically it is similar to
- * stack overflow exception in classic stack model. Will result in SIGABRT
- * if in user space or BUG in kernerl as there is nothing to be done.
- *
- * @todo Implement CO_RV_YIELD_WAIT_COND
+ * @todo Document all the state transitions
  *
  */
 typedef enum co_yield_rv {
@@ -60,10 +27,10 @@ typedef enum co_yield_rv {
 	CO_RV_YIELD_RETURN,
 	/** Execution terminated. */
 	CO_RV_YIELD_BREAK,
-	/** Not terminated, still running asynchronously */
-	CO_RV_YIELD_WAIT,
+	/** Not terminated, awaiting child coroutine */
+	CO_RV_YIELD_AWAIT,
 	/** Not terminated, waiting on condition, can be rerun to test condition */
-	CO_RV_YIELD_WAIT_COND,
+	CO_RV_YIELD_COND_WAIT,
 	/** Unexpected error during the execution */
 	CO_RV_YIELD_ERROR
 } co_yield_rv_t;
@@ -88,7 +55,9 @@ typedef enum co_routine_flag {
 	/** Execution results are ready */
 	CO_FLAG_READY,
 	/** Corotine object was created by slow allocator */
-	CO_FLAG_SLOW_ALLOC
+	CO_FLAG_SLOW_ALLOC,
+	/** Is set on coroutine awaiting for results if its child exited with yield break */
+	CO_FLAG_CHILD_TERM,
 } co_routine_flag_t;
 
 #define co_routine_flags_init() ((co_routine_flags_bmp_t)0)
@@ -102,6 +71,10 @@ static __inline__ void co_routine_flag_set(co_routine_flags_bmp_t *flags, co_rou
 static __inline__ void co_routine_flag_clear(co_routine_flags_bmp_t *flags, co_routine_flag_t flag) {
 	*flags &= ~(1 << flag);
 }
+
+#define co_routine_flag_set_alloc(flags, alloc) __co_cat_2(co_routine_flag_set_alloc_, alloc)(flags)
+#define co_routine_flag_set_alloc_fast(flags) co_routine_flag_clear(flags, CO_FLAG_SLOW_ALLOC)
+#define co_routine_flag_set_alloc_slow(flags) co_routine_flag_set(flags, CO_FLAG_SLOW_ALLOC)
 
 /**
  * Generic coroutine object
@@ -119,12 +92,9 @@ typedef struct co_coroutine_obj {
 	co_routine_flags_bmp_t flags;
 	/** Pointer to a child coroutine */
 	struct co_coroutine_obj *child;
-	union {
-		/** Pointer to the coroutines awaiting for current coroutine */
-		struct co_coroutine_obj *await;
-		/** Pointer to future object for top level only routines*/
-		co_future_t *future;
-	};
+	/** Pointer to all the coroutines awaiting for current coroutine */
+	co_list_e_t *await;
+
 	/** Debug only trace function name */
 	co_dbg(const char *func_name);
 } co_coroutine_obj_t;

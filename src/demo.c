@@ -3,101 +3,45 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#define _(x) self->args.x
+
 co_routine_decl(int, test1, int, x, int, y);
-co_routine_decl(int, test0, int, x, int, y);
-co_routine_decl(/* void */, test2, int, x, int, y);
-co_routine_decl(int, test3, int, i);
+co_routine_decl(int, test0, int, x, int, y, struct test1_co_obj *, test1);
+// co_routine_decl(/* void */, test2, int, x, int, y);
+// co_routine_decl(int, test3, int, i);
 
-void *waker_thread(void *param) {
-	usleep(1000000);
-	co_coroutine_obj_ring_the_bell(((co_coroutine_obj_t *)param));
-	return NULL;
-}
+co_yield_rv_t test1(struct test1_co_obj *self) {
+	co_routine_begin(self, test1);
 
-void *waker_thread2(void *param) {
-	usleep(1000000);
-	co_coroutine_obj_ring_the_bell(((co_coroutine_obj_t *)param));
-	return NULL;
-}
-
-co_routine_body(test3) {
-	co_routine_start(test3);
-	/* This function simply returns all numbers from i to 0 */
-	for (; args->i >= 0; --args->i) {
-		co_yield_return(args->i);
+	while (_(x) > _(y)) {
+		--_(x);
+		co_yield_return(self, _(x));
 	}
-
 	co_yield_break();
 }
 
-co_routine_body(test0) {
-	co_routine_start(test0);
+co_yield_rv_t test0(struct test0_co_obj *self) {
+	co_routine_begin(self, test0);
 
-	fprintf(stderr, "Test 0: x = %d, y = %d\n", args->x, args->y);
+	printf("test0: %d %d\n", _(x), _(y));
 
-	++args->x;
-	++args->y;
+	co_yield_return(self, 10);
 
-	co_yield_return(10);
+	self->args.x += 1;
+	self->args.y += 2;
 
-	{
-		pthread_t sleeper;
-		pthread_create(&sleeper, NULL, waker_thread2, __co_obj);
-	}
-	co_yield_wait();
+	printf("test0: %d %d\n", _(x), _(y));
 
-	fprintf(stderr, "Test 0: x = %d, y = %d\n", args->x, args->y);
+	co_yield_return(self, 20);
 
-	co_yield_return(20);
+	_(test1) = co_fork(self, test1, 20, 10);
 
-	// co_foreach_yield_return(test3, 5);
-	co_foreach_yield_return(test3, 5);
+	co_run(self, _(test1));
 
-	co_yield_break();
-}
+	while_co_yield_await(self, _(test1)) {
+		printf("Test 1 returne %d\n", _(test1)->rv);
 
-co_routine_body(test1) {
-	int test0retval;
-	co_routine_start(test1);
-
-	fprintf(stderr, "Test 1: x = %d, y = %d\n", args->x, args->y);
-
-	++args->x;
-	++args->y;
-
-	co_yield_return(10);
-
-	co_foreach_yield(test0retval, test0, (args->x, args->y),
-	                 { fprintf(stderr, "Test 1: got response %d from test 0\n", test0retval); });
-
-	fprintf(stderr, "Test 1: x = %d, y = %d\n", args->x, args->y);
-
-	co_yield_return(20);
-
-	co_yield_break();
-}
-
-co_routine_body(test2) {
-	co_routine_start(test2);
-
-	fprintf(stderr, "Test 2: x = %d, y = %d\n", args->x, args->y);
-
-	++args->x;
-	++args->y;
-
-	co_yield_return();
-	{
-		pthread_t sleeper;
-		pthread_create(&sleeper, NULL, waker_thread, __co_obj);
-	}
-	co_yield_wait();
-
-	fprintf(stderr, "Test 2: x = %d, y = %d\n", args->x, args->y);
-
-	co_yield_return();
-
-	if (args->x > 20) {
-		co_foreach_yield(, test2, (0, 1), { fprintf(stderr, "I invoked myself and I liked it!\n"); });
+		co_yield_await_next(self, _(test1));
 	}
 
 	co_yield_break();
@@ -106,11 +50,16 @@ co_routine_body(test2) {
 int main() {
 	co_allocator_t a = co_primitive_allocator_init();
 	co_multi_co_wq_t wq;
+	struct test0_co_obj *test0co;
 
 	co_multi_co_wq_init(&wq, 8, &a, &a);
 
-	co_routine_invoke(test1, &wq, 10, 20);
-	co_routine_invoke(test2, &wq, 30, 40);
+	test0co = co_new(&wq, test0, 10, 10, NULL);
+
+	co_schedule(&wq, test0co);
+
+	// co_routine_invoke(test1, &wq, 10, 20);
+	// co_routine_invoke(test2, &wq, 30, 40);
 
 	co_multi_co_wq_loop(&wq);
 

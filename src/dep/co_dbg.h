@@ -8,10 +8,10 @@
 /*
  * Init debug settings
  */
-#ifndef CO_DBG_TRACES
-#define CO_DBG_TRACES_
+#ifndef CO_DBG_VERBOSE
+#define CO_DBG_VERBOSE_
 #else
-#define CO_DBG_TRACES_ 1
+#define CO_DBG_VERBOSE_ 1
 #endif
 
 #ifndef CO_DBG_ASSERTIONS
@@ -29,13 +29,14 @@
 		raise(SIGABRT);                                                                                                \
 	}
 
-#define co_assert(what, reason, ...) __co_if_empty(CO_DBG_ASSERTIONS_, , co_assert_(what, reason, ##__VA_ARGS__))
+#define co_assert(what, ...) co_assert_reason(what, "" __VA_ARGS__)
+#define co_assert_reason(what, reason, ...) __co_if_empty(CO_DBG_ASSERTIONS_, , co_assert_(what, reason, ##__VA_ARGS__))
 
 /**
  * Do something in debug mode only
  * @param expr Any code snippet
  */
-#define co_dbg(expr) __co_if_empty(CO_DBG_TRACES_, , expr)
+#define co_dbg(expr) __co_if_empty(CO_DBG_VERBOSE_, , expr)
 
 #define co_dbg_trace(...)                                                                                              \
 	co_dbg({                                                                                                           \
