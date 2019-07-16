@@ -1,26 +1,26 @@
 
-#ifndef CO_QUEUE
-#define CO_QUEUE
+#ifndef CO_LIST_H
+#define CO_LIST_H
 /**
- * @file co_queue.h
+ * @file co_list.h
  */
 
 #include "co_dbg.h"
 #include "co_types.h"
 
-struct co_queu_e;
+struct co_list_e;
 /**
- * Queue element
+ * Linked list element
  */
-typedef struct co_queu_e {
-	struct co_queu_e *next;
+typedef struct co_list_e {
+	struct co_list_e *next;
 } co_queue_e_t;
 
 /**
- * Queue
+ * Queue, based on linked list
  */
 typedef struct co_queu {
-	struct co_queu_e *head, *tail;
+	struct co_list_e *head, *tail;
 } co_queue_t;
 
 #define co_q_init()                                                                                                    \
@@ -81,11 +81,11 @@ static __inline__ void co_q_enq_q(co_queue_t *dst, co_queue_t *src) {
 	*src      = co_q_init();
 }
 
-#define for_each_co_queue(var, q) for ((var) = (q)->head; (var); (var) = (var)->next)
+#define for_each_co_list(var, q) for ((var) = (q)->head; (var); (var) = (var)->next)
 
-#define for_each_filter_queue(var, prev, q)                                                                            \
+#define for_each_filter_list(var, prev, q)                                                                             \
 	for ((var) = (q)->head, (prev) = NULL; (var); (prev) = (var), (var) = (var)->next)
 
 #define for_each_drain_queue(var, q, peek, deq) for ((var) = peek(q); (var); (var) = peek(q), deq(q))
 
-#endif /*CO_QUEUE*/
+#endif /*CO_LIST_H*/

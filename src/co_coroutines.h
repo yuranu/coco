@@ -35,7 +35,7 @@
 #define co_routine_ctx_init(fname, wqptr, ...)                                                                         \
 	(struct co_ctx_tname(fname)) {                                                                                     \
 		.obj.wq = wqptr, .obj.flags = co_routine_flags_init(), .obj.func = co_body_fname(fname),                       \
-		.obj.ip = CO_IPOINTER_START, .obj.child = NULL, .obj.parent = NULL, .args = {__co_list_c(__VA_ARGS__)},        \
+		.obj.ip = CO_IPOINTER_START, .obj.child = NULL, .obj.await = NULL, .args = {__co_list_c(__VA_ARGS__)},        \
 		.locs_ptr = NULL, co_dbg(.obj.func_name = __co_stringify(fname))                                               \
 	}
 
@@ -61,7 +61,7 @@
 			__co_handle_critical_error();                                                                              \
 		co_routine_flag_clear(&__co_obj->flags, CO_FLAG_SLOW_ALLOC);                                                   \
 		*__co_child_obj            = co_routine_ctx_init(fname, __co_obj->wq, ##__VA_ARGS__); /* Pass the args */      \
-		__co_child_obj->obj.parent = __co_obj;             /* Link child to parent */                                  \
+		__co_child_obj->obj.await = __co_obj;             /* Link child to parent */                                  \
 		__co_obj->child            = &__co_child_obj->obj; /* Link parent to child */                                  \
 	})
 

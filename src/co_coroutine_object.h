@@ -8,7 +8,7 @@
  */
 
 #include "dep/co_dbg.h"
-#include "dep/co_queue.h"
+#include "dep/co_list.h"
 #include "dep/co_sync.h"
 #include "dep/co_types.h"
 
@@ -120,8 +120,8 @@ typedef struct co_coroutine_obj {
 	/** Pointer to a child coroutine */
 	struct co_coroutine_obj *child;
 	union {
-		/** Pointer to the parent coroutine for sub-routines only */
-		struct co_coroutine_obj *parent;
+		/** Pointer to the coroutines awaiting for current coroutine */
+		struct co_coroutine_obj *await;
 		/** Pointer to future object for top level only routines*/
 		co_future_t *future;
 	};

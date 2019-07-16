@@ -29,6 +29,7 @@ OUT_DIR := $(BUILD_DIR)/$(CONFIG)/bin
 SRC := src/demo.c
 OBJ := ${SRC:.c=.o}
 DEP := ${SRC:.c=.d}
+DOT := ${SRC:.c=.dot/callgraph.dot}
 OUT := demo
 
 CFLAGS := -std=gnu89 -Wall -Werror
@@ -73,6 +74,8 @@ endef
 
 # Targets
 
+-include $(DEP_DIR)/$(DEP)
+
 mkdir:
 	$(TRACE)mkdir -p $(call multi_dirname,MAKE_DIRS)
 
@@ -90,5 +93,3 @@ doc:
 
 clean:
 	$(TRACE)rm -rf build doc
-
--include $(DEP_DIR)/$(DEP)

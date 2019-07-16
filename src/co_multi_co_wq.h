@@ -15,7 +15,7 @@
 #include "co_multi_src_q.h"
 #include "dep/co_allocator.h"
 #include "dep/co_dbg.h"
-#include "dep/co_queue.h"
+#include "dep/co_list.h"
 #include "dep/co_sync.h"
 #include "dep/co_types.h"
 
@@ -141,7 +141,7 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 
 			/* 2. Now the wait queues */
 			co_queue_e_t *prev;
-			for_each_filter_queue(task, prev, &wq->waitq) {
+			for_each_filter_list(task, prev, &wq->waitq) {
 				co_coroutine_obj_t *coroutine = __co_container_of(task, co_coroutine_obj_t, qe);
 				if (co_routine_flag_test(coroutine->flags, CO_FLAG_READY)) { /* Great, pending task became ready */
 					co_q_cherry_pick(&wq->waitq, task, prev);
@@ -186,9 +186,9 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 
 			switch (co_rv) {
 				case CO_RV_YIELD_BREAK:
-					if (coroutine->parent) { /* If it is a child coroutine, notify parent it terminated */
-						coroutine->parent->child = NULL;
-						co_routine_flag_set(&coroutine->parent->flags, CO_FLAG_READY);
+					if (coroutine->await) { /* If it is a child coroutine, notify parent it terminated */
+						coroutine->await->child = NULL;
+						co_routine_flag_set(&coroutine->await->flags, CO_FLAG_READY);
 					}
 					co_multi_co_wq_free(wq, task);
 					break;
@@ -196,8 +196,8 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 					co_q_enq(&wq->waitq, task); /* Just move to wait queue */
 					break;
 				case CO_RV_YIELD_RETURN:
-					if (coroutine->parent) /* If it is a child coroutine, notify parent it has intermediate results */
-						co_routine_flag_set(&coroutine->parent->flags, CO_FLAG_READY);
+					if (coroutine->await) /* If it is a child coroutine, notify parent it has intermediate results */
+						co_routine_flag_set(&coroutine->await->flags, CO_FLAG_READY);
 					else
 						co_q_enq(&wq->execq, task); /* Else reschedule */
 					break;

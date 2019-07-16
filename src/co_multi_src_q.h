@@ -29,7 +29,7 @@
  */
 
 #include "dep/co_atomics.h"
-#include "dep/co_queue.h"
+#include "dep/co_list.h"
 #include "dep/co_sync.h"
 #include "dep/co_types.h"
 #include "utils/co_macro.h"
