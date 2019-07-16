@@ -14,7 +14,7 @@ struct co_list_e;
  */
 typedef struct co_list_e {
 	struct co_list_e *next;
-} co_queue_e_t;
+} co_list_e_t;
 
 /**
  * Queue, based on linked list
@@ -30,7 +30,7 @@ static __inline__ co_bool_t co_q_empty(co_queue_t *q) { return q->head == NULL; 
 
 static __inline__ co_size_t co_q_len(co_queue_t *q) {
 	int i             = 0;
-	co_queue_e_t *ptr = q->head;
+	co_list_e_t *ptr = q->head;
 	while (ptr) {
 		++i;
 		ptr = ptr->next;
@@ -38,7 +38,7 @@ static __inline__ co_size_t co_q_len(co_queue_t *q) {
 	return i;
 }
 
-static __inline__ void co_q_enq(co_queue_t *q, co_queue_e_t *elem) {
+static __inline__ void co_q_enq(co_queue_t *q, co_list_e_t *elem) {
 	if (q->tail)
 		q->tail->next = elem;
 	else
@@ -47,7 +47,7 @@ static __inline__ void co_q_enq(co_queue_t *q, co_queue_e_t *elem) {
 	q->tail->next = NULL;
 }
 
-static __inline__ void co_q_enq_head(co_queue_t *q, co_queue_e_t *elem) {
+static __inline__ void co_q_enq_head(co_queue_t *q, co_list_e_t *elem) {
 	if (q->tail == NULL)
 		q->tail = elem;
 	elem->next = q->head;
@@ -60,7 +60,7 @@ static __inline__ void co_q_deq(co_queue_t *q) {
 		q->tail = NULL;
 }
 
-static __inline__ void co_q_cherry_pick(co_queue_t *q, co_queue_e_t *elem, co_queue_e_t *prev) {
+static __inline__ void co_q_cherry_pick(co_queue_t *q, co_list_e_t *elem, co_list_e_t *prev) {
 	if (!prev) {
 		co_q_deq(q);
 	} else {
@@ -70,7 +70,7 @@ static __inline__ void co_q_cherry_pick(co_queue_t *q, co_queue_e_t *elem, co_qu
 	}
 }
 
-static __inline__ co_queue_e_t *co_q_peek(co_queue_t *q) { return q->head; }
+static __inline__ co_list_e_t *co_q_peek(co_queue_t *q) { return q->head; }
 
 static __inline__ void co_q_enq_q(co_queue_t *dst, co_queue_t *src) {
 	if (dst->tail)
@@ -81,7 +81,7 @@ static __inline__ void co_q_enq_q(co_queue_t *dst, co_queue_t *src) {
 	*src      = co_q_init();
 }
 
-#define for_each_co_list(var, q) for ((var) = (q)->head; (var); (var) = (var)->next)
+#define for_each_co_list(var, head) for ((var) = (head); (var); (var) = (var)->next)
 
 #define for_each_filter_list(var, prev, q)                                                                             \
 	for ((var) = (q)->head, (prev) = NULL; (var); (prev) = (var), (var) = (var)->next)

@@ -70,7 +70,7 @@ typedef struct co_multi_co_wq {
  * @param wq Coroutine work queue pointer
  * @param task Queue element of coroutine wq representing a coroutine
  */
-static __inline__ void co_multi_co_wq_free(co_multi_co_wq_t *wq, co_queue_e_t *task) {
+static __inline__ void co_multi_co_wq_free(co_multi_co_wq_t *wq, co_list_e_t *task) {
 	if (co_routine_flag_test(__co_container_of(task, co_coroutine_obj_t, qe)->flags, CO_FLAG_SLOW_ALLOC))
 		wq->slow_alloc->free(wq->slow_alloc, task);
 	else
@@ -130,8 +130,9 @@ static __inline__ void co_multi_co_wq_destroy(co_multi_co_wq_t *wq) {
 static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 	co_bool_t b4sleep = 0; /* Whether or not we are planning to go to sleep next round */
 	while (!wq->terminate) {
-		co_queue_e_t *task = NULL; /* Attempt to get a new taks */
+		co_list_e_t *task = NULL; /* Attempt to get a new taks */
 		do {
+
 			/* 1. Start with draining the exec queues */
 			task = co_q_peek(&wq->execq);
 			if (task) {
@@ -140,7 +141,7 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 			}
 
 			/* 2. Now the wait queues */
-			co_queue_e_t *prev;
+			co_list_e_t *prev;
 			for_each_filter_list(task, prev, &wq->waitq) {
 				co_coroutine_obj_t *coroutine = __co_container_of(task, co_coroutine_obj_t, qe);
 				if (co_routine_flag_test(coroutine->flags, CO_FLAG_READY)) { /* Great, pending task became ready */

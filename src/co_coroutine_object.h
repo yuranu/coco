@@ -108,7 +108,7 @@ static __inline__ void co_routine_flag_clear(co_routine_flags_bmp_t *flags, co_r
  */
 typedef struct co_coroutine_obj {
 	/** Each object is actually a queue element */
-	co_queue_e_t qe;
+	co_list_e_t qe;
 	/** Pointes back to work queue. */
 	struct co_multi_co_wq *wq;
 	/** The pointer to the coroutine function */

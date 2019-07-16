@@ -101,7 +101,7 @@ static __inline__ void co_multi_src_q_destroy(co_multi_src_q_t *q) {
  * @param q Multi source queue pointer
  * @return Multi queue element or NULL if empty
  */
-static __inline__ co_queue_e_t *co_multi_src_q_peek(co_multi_src_q_t *q) {
+static __inline__ co_list_e_t *co_multi_src_q_peek(co_multi_src_q_t *q) {
 	int i;
 	if (!co_q_empty(&q->mq)) /* First always check mq */
 		return co_q_peek(&q->mq);
@@ -135,7 +135,7 @@ static __inline__ void co_multi_src_q_deq(co_multi_src_q_t *q) {
  * @param e Queue element
  * @return 0 or error code
  */
-static __inline__ co_errno_t co_multi_src_q_enq(co_multi_src_q_t *q, co_queue_e_t *e) {
+static __inline__ co_errno_t co_multi_src_q_enq(co_multi_src_q_t *q, co_list_e_t *e) {
 	/* First aquire some lock */
 	int i;
 	co_size_t lockid = co_tid_hash() % co_multi_src_q_sz(q);
