@@ -53,8 +53,8 @@
 #define co_routine_ctx_init(fname, wqptr, ...)                                                                         \
 	(struct co_ctx_tname(fname)) {                                                                                     \
 		.obj.wq = wqptr, .obj.flags = co_routine_flags_init(), .obj.func = co_wrapper_fname(fname),                    \
-		.obj.ip = CO_IPOINTER_START, .obj.child = NULL, .obj.await = NULL, .args = {__co_list_c(__VA_ARGS__)},         \
-		.locs_ptr = NULL, co_dbg(.obj.func_name = __co_stringify(fname))                                               \
+		.obj.ip = CO_IPOINTER_START, .obj.child = NULL, .obj.await = NULL, .args = {__VA_ARGS__}, .locs = NULL,        \
+		co_dbg(.obj.func_name = __co_stringify(fname))                                                                 \
 	}
 
 /**
@@ -235,7 +235,7 @@ co_label_checkpoint:                                                            
 	struct co_ctx_tname(fname) { /* Define full ctx object */                                                          \
 		co_coroutine_obj_t obj;                                                                                        \
 		struct co_args_tname(fname) args;                                                                              \
-		struct co_locs_tname(fname) * locs_ptr;                                                                        \
+		struct co_locs_tname(fname) * locs;                                                                            \
 		__co_if_empty(rtype, , rtype rv);                                                                              \
 	}
 
@@ -257,13 +257,38 @@ co_label_checkpoint:                                                            
 /**
  * Start co routine code section.
  * Always must be the first statement inside co-routine body.
+ * @param self Coroutine self pointer
  * @param fname Coroutine name
- * @todo Implement locals
  */
-#define co_routine_begin(self, fname, ...)                                                                             \
+#define co_routine_begin(self, fname)                                                                                  \
 __co_label_start:                                                                                                      \
 	/* Coroutine always assumes results not ready, and tries to prove this wrong */                                    \
 	if ((self)->obj.ip != CO_IPOINTER_START)                                                                           \
 		goto *(&&__co_label_start + (self)->obj.ip);
+
+#define __co_decl_locs_struct(__)
+
+/**
+ * Define and initialize co-routine local variables.
+ * @param self Coroutine self pointer
+ * @param fname Coroutine name
+ * @param ... List of definitions of form 'type name' for local vars
+ * @todo Find a cleaner way. This kinda sucks.
+ */
+#define co_decl_locs(self, fname, ...) struct co_locs_tname(fname){__co_foreach(__co_add_semilon, ##__VA_ARGS__)};
+
+/**
+ * Init local variables.
+ * @param self Coroutine self pointer
+ * @param fname Coroutine name
+ * @param ... List of initializers
+ */
+#define co_init_locs(self, fname, ...)                                                                                 \
+	({                                                                                                                 \
+		(self)->locs = co_multi_co_wq_alloc_fast((self)->obj.wq, sizeof(*(self)->locs));                               \
+		if ((self)->locs)                                                                                              \
+			*(self)->locs = (struct co_locs_tname(fname)){__VA_ARGS__};                                                \
+		(self)->locs;                                                                                                  \
+	})
 
 #endif /*CO_COROUTINES_H*/

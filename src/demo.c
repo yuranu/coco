@@ -5,16 +5,31 @@
 
 #define _(x) self->args.x
 
+void *wake_me_up_in_1_sec(void *p) {
+	co_coroutine_obj_t *co = (co_coroutine_obj_t *)p;
+
+	usleep(1000000);
+
+	co_coroutine_obj_ring_the_bell(co);
+
+	return NULL;
+}
+
 co_routine_decl(int, test1, int, x, int, y);
 co_routine_decl(int, test0, int, x, int, y, struct test1_co_obj *, test1);
-// co_routine_decl(/* void */, test2, int, x, int, y);
-// co_routine_decl(int, test3, int, i);
 
+co_decl_locs(self, test1, pthread_t pt);
 co_yield_rv_t test1(struct test1_co_obj *self) {
 	co_routine_begin(self, test1);
 
+	co_init_locs(self, test1, 0);
+
 	while (_(x) > _(y)) {
 		--_(x);
+		if (_(x) % 7 == 0) {
+			pthread_create(&self->locs->pt, NULL, wake_me_up_in_1_sec, &self->obj);
+			co_yield_wait(self);
+		}
 		co_yield_return(self, _(x));
 	}
 
@@ -42,7 +57,7 @@ co_yield_rv_t test0(struct test0_co_obj *self) {
 
 	co_yield_return(self, 20);
 
-	_(test1) = co_fork(self, test1, 20, 10);
+	_(test1) = co_fork(self, test1, .y = 10, .x = 20);
 
 	co_run(self, _(test1));
 

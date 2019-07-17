@@ -7,9 +7,9 @@
  */
 
 #ifndef container_of
-#define __co_container_of(ptr, type, member) ((type *)((void *)ptr - (void *)&((type *)0)->member))
+#	define __co_container_of(ptr, type, member) ((type *)((void *)ptr - (void *)&((type *)0)->member))
 #else
-#define __co_container_of container_of
+#	define __co_container_of container_of
 #endif
 
 #define __co_if_empty(param, x, y) __co_cat_2(__co_if_empty_, __co_narg(param))(x, y)
@@ -60,6 +60,24 @@
 #define __co_even_args_comma_4(d, _1, _2, _3, _4) _2, _4
 #define __co_even_args_comma_6(d, _1, _2, _3, _4, _5, _6) _2, _4, _6
 #define __co_even_args_comma_8(d, _1, _2, _3, _4, _5, _6, _7, _8) _2, _4, _6, _8
+
+#define __co_open_bracks(...) __VA_ARGS__
+
+#define __co_add_semilon(x) x;
+
+#define __co_foreach(what, ...) __co_cat_2(__co_foreach_, __co_narg(__VA_ARGS__))(what, ##__VA_ARGS__)
+#define __co_foreach_0(what, ...)
+#define __co_foreach_1(what, x, ...) what(x) __co_foreach_0(##__VA_ARGS__)
+#define __co_foreach_2(what, x, ...) what(x) __co_foreach_1(##__VA_ARGS__)
+#define __co_foreach_3(what, x, ...) what(x) __co_foreach_2(##__VA_ARGS__)
+#define __co_foreach_4(what, x, ...) what(x) __co_foreach_3(##__VA_ARGS__)
+#define __co_foreach_5(what, x, ...) what(x) __co_foreach_4(##__VA_ARGS__)
+#define __co_foreach_6(what, x, ...) what(x) __co_foreach_5(##__VA_ARGS__)
+#define __co_foreach_7(what, x, ...) what(x) __co_foreach_6(##__VA_ARGS__)
+#define __co_foreach_8(what, x, ...) what(x) __co_foreach_7(##__VA_ARGS__)
+#define __co_foreach_9(what, x, ...) what(x) __co_foreach_8(##__VA_ARGS__)
+#define __co_foreach_10(what, x, ...) what(x) __co_foreach_9(##__VA_ARGS__)
+#define __co_foreach_11(what, x, ...) what(x) __co_foreach_10(##__VA_ARGS__)
 
 #define __co_narg(...) __co_narg_(dum, ##__VA_ARGS__, __co_n_list())
 #define __co_narg_(...) __co_arg_n(__VA_ARGS__)
