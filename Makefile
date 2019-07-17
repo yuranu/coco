@@ -48,7 +48,7 @@ ifeq (debug,$(CONFIG))
   CFLAGS += -ggdb
   CFLAGS += -DCO_DBG_ASSERTIONS=1
   # Enable for extra debug prints: 
-  CFLAGS += -DCO_DBG_VERBOSE=1
+  CFLAGS += -DCO_DBG_VERBOSE=0
 endif
 
 ifeq (release,$(CONFIG))

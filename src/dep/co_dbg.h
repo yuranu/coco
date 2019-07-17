@@ -8,16 +8,16 @@
 /*
  * Init debug settings
  */
-#ifndef CO_DBG_VERBOSE
-#define CO_DBG_VERBOSE_
+#if !defined(CO_DBG_VERBOSE) || CO_DBG_VERBOSE != 1
+#	define CO_DBG_VERBOSE_
 #else
-#define CO_DBG_VERBOSE_ 1
+#	define CO_DBG_VERBOSE_ 1
 #endif
 
-#ifndef CO_DBG_ASSERTIONS
-#define CO_DBG_ASSERTIONS_
+#if !defined(CO_DBG_ASSERTIONS) || CO_DBG_ASSERTIONS != 1
+#	define CO_DBG_ASSERTIONS_
 #else
-#define CO_DBG_ASSERTIONS_ 1
+#	define CO_DBG_ASSERTIONS_ 1
 #endif
 
 #define co_assert_(what, reason, ...)                                                                                  \

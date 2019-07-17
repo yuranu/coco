@@ -27,6 +27,8 @@
 #define co_gen_label(labael, n) __co_cat_2(labael, n)
 #define co_label_checkpoint co_gen_label(__co_label_checkpoint_, __LINE__)
 #define co_label_checkpoint_await co_gen_label(__co_label_checkpoint_await_, __LINE__)
+#define co_label_checkpoint_1 co_gen_label(__co_label_checkpoint_1_, __LINE__)
+#define co_label_checkpoint_2 co_gen_label(__co_label_checkpoint_2_, __LINE__)
 
 /**
  * Retrieve full coroutine ctx pointer from inside coroutine body
@@ -66,7 +68,7 @@
 #define __co_new(wq, alloc, fname, ...)                                                                                \
 	({                                                                                                                 \
 		struct co_ctx_tname(fname) *__co_new_obj =                                                                     \
-		    co_multi_co_wq_alloc(wq, alloc, sizeof(struct co_ctx_tname(fname)));                                       \
+			co_multi_co_wq_alloc(wq, alloc, sizeof(struct co_ctx_tname(fname)));                                       \
 		if (__co_new_obj) {                                                                                            \
 			co_routine_flag_set_alloc(&__co_new_obj->obj.flags, alloc);                                                \
 			*__co_new_obj = co_routine_ctx_init(fname, wq, ##__VA_ARGS__);                                             \
@@ -83,6 +85,20 @@
 #define co_fork(self, fname, ...) __co_new((self)->obj.wq, fast, fname, ##__VA_ARGS__)
 
 /**
+ * Create and initialize coroutine obj from other coroutine context, then run it
+ * @param self Calling coroutine
+ * @param fname Target coroutine name
+ * @param ... Coroutine arguments
+ */
+#define co_fork_run(self, fname, ...)                                                                                  \
+	({                                                                                                                 \
+		struct co_ctx_tname(fname) *__co_fork = co_fork(self, fname, ##__VA_ARGS__);                                   \
+		if (__co_fork)                                                                                                 \
+			co_run(self, __co_fork);                                                                                   \
+		__co_fork;                                                                                                     \
+	})
+
+/**
  * Create and initialize coroutine obj from outside of the coroutine context
  * @param wq Coroutine work queue to schedule on
  * @param fname Target coroutine name
@@ -96,8 +112,11 @@
  * @param target Coroutine object pointer to run
  */
 #define co_run(self, target)                                                                                           \
-	co_assert((self)->obj.wq == (target)->obj.wq);                                                                     \
-	co_q_enq(&(self)->obj.wq->execq, &(target)->obj.qe)
+	({                                                                                                                 \
+		co_assert((self) && (target) && (self)->obj.wq == (target)->obj.wq);                                           \
+		co_q_enq(&(self)->obj.wq->execq, &(target)->obj.qe);                                                           \
+		target;                                                                                                        \
+	})
 
 /**
  * Extract coroutine out of execution queue
@@ -133,7 +152,7 @@
 	(self)->obj.qe.next = (target)->obj.await;                                                                         \
 	(target)->obj.await = &(self)->obj.qe;                                                                             \
 	return CO_RV_YIELD_AWAIT;                                                                                          \
-	co_label_checkpoint_await:                                                                                         \
+co_label_checkpoint_await:                                                                                             \
 	__co_nop();
 
 /**
@@ -151,7 +170,7 @@
  * @param self Calling coroutine
  * @param target Coroutine object
  */
-#define while_co_yield_await(self, target)                                                                             \
+#define if_co_yield_await(self, target)                                                                                \
 	co_yield_await(self, target);                                                                                      \
 	if (!co_routine_flag_test((self)->obj.flags, CO_FLAG_CHILD_TERM))
 
@@ -159,9 +178,19 @@
  * Awaits on target and executes following code block it target yielded and still alive
  * @param self Calling coroutine
  * @param target Coroutine object
- * @todo Implement for_each_yield_return
+ * @note Require both self a target same type of non-void rv
  */
-#define for_each_yield_return(self, target, fname)
+#define for_each_yield_return(self, target)                                                                            \
+	{                                                                                                                  \
+		if_co_yield_await(self, target) {                                                                              \
+			co_pause(self, target);              /* Pause target until we finish */                                    \
+			co_yield_return(self, (target)->rv); /* Return results */                                                  \
+			co_run(self, target);                /* Now target can continue */                                         \
+			(self)->obj.ip =                                                                                           \
+			    &&co_label_checkpoint_await - &&__co_label_start; /* Setup ip to point back to if_co_yield_await */    \
+			co_yield_await_next(self, target);                                                                         \
+		}                                                                                                              \
+	}
 
 /**
  * Yield coroutine, returning a value
@@ -172,7 +201,7 @@
 	__co_if_empty(__VA_ARGS__, , (self)->rv = __VA_ARGS__);      /* Set rv */                                          \
 	(self)->obj.ip = &&co_label_checkpoint - &&__co_label_start; /* Save return point */                               \
 	return CO_RV_YIELD_RETURN;                                                                                         \
-	co_label_checkpoint:                                                                                               \
+co_label_checkpoint:                                                                                                   \
 	__co_nop() /* Next execution will start from here */
 
 /**
@@ -184,7 +213,7 @@
 #define co_yield_wait_cond(self, cond, ...)                                                                            \
 	__co_if_empty(__VA_ARGS__, , (self)->obj.rv = __VA_ARGS__);  /* Set rv */                                          \
 	(self)->obj.ip = &&co_label_checkpoint - &&__co_label_start; /* Save return point */                               \
-	co_label_checkpoint:                                                                                               \
+co_label_checkpoint:                                                                                                   \
 	if (!(cond))                                                                                                       \
 		return CO_RV_YIELD_COND_WAIT;
 
@@ -193,7 +222,11 @@
  * @param self Calling coroutine
  * @param ... Optional return value
  */
-#define co_yield_wait(self, ...) co_yield_wait_cond(self, , ##__VA_ARGS__)
+#define co_yield_wait(self, ...)                                                                                       \
+	{                                                                                                                  \
+		co_routine_flag_clear(&(self)->obj.flags, CO_FLAG_READY);                                                      \
+		co_yield_wait_cond(self, co_routine_flag_test((self)->obj.flags, CO_FLAG_READY), ##__VA_ARGS__)                \
+	}
 
 #define co_ctx_def(rtype, fname, ...)                                                                                  \
 	struct co_args_tname(fname) { /* Define args type */                                                               \
@@ -228,9 +261,8 @@
  * @todo Implement locals
  */
 #define co_routine_begin(self, fname, ...)                                                                             \
-	__co_label_start:                                                                                                  \
+__co_label_start:                                                                                                      \
 	/* Coroutine always assumes results not ready, and tries to prove this wrong */                                    \
-	co_routine_flag_clear(&(self)->obj.flags, CO_FLAG_READY);                                                          \
 	if ((self)->obj.ip != CO_IPOINTER_START)                                                                           \
 		goto *(&&__co_label_start + (self)->obj.ip);
 

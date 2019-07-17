@@ -17,6 +17,14 @@ co_yield_rv_t test1(struct test1_co_obj *self) {
 		--_(x);
 		co_yield_return(self, _(x));
 	}
+
+	if (_(x) > 100)
+		co_yield_break();
+	else {
+		self->obj.child = (co_coroutine_obj_t *)co_fork_run(self, test1, 200, 190);
+		for_each_yield_return(self, (struct test1_co_obj *)self->obj.child);
+	}
+
 	co_yield_break();
 }
 
@@ -38,7 +46,7 @@ co_yield_rv_t test0(struct test0_co_obj *self) {
 
 	co_run(self, _(test1));
 
-	while_co_yield_await(self, _(test1)) {
+	if_co_yield_await(self, _(test1)) {
 		printf("Test 1 returne %d\n", _(test1)->rv);
 
 		co_yield_await_next(self, _(test1));
