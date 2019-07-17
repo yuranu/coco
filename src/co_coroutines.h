@@ -159,6 +159,7 @@ co_label_checkpoint_await:                                                      
  * Await for next response of previously invoked coroutine
  * @param self Coroutine self pointer
  * @param target Coroutine object pointer to await
+ * @deprecated
  */
 #define co_yield_await_next(self, target)                                                                              \
 	(self)->obj.qe.next = (target)->obj.await;                                                                         \
@@ -175,21 +176,36 @@ co_label_checkpoint_await:                                                      
 	if (!co_routine_flag_test((self)->obj.flags, CO_FLAG_CHILD_TERM))
 
 /**
+ * Loops while target await returns results
+ * @param self Calling coroutine
+ * @param target Coroutine object
+ * @note Damn, this macro is my masterpiece !!!
+ */
+#define while_co_yield_await(self, target)                                                                             \
+	co_routine_flag_clear(&(self)->obj.flags, CO_FLAG_CHILD_TERM);                                                     \
+	while (({                                                                                                          \
+		(self)->obj.ip      = &&co_label_checkpoint_await - &&__co_label_start;                                        \
+		(self)->obj.qe.next = (target)->obj.await;                                                                     \
+		(target)->obj.await = &(self)->obj.qe;                                                                         \
+		if (!co_routine_flag_test((self)->obj.flags, CO_FLAG_CHILD_TERM))                                              \
+			return CO_RV_YIELD_AWAIT;                                                                                  \
+		co_routine_flag_clear(&(self)->obj.flags, CO_FLAG_CHILD_TERM); /* This is important to support nested loops */ \
+		0;                                                                                                             \
+	}))                                                                                                                \
+	co_label_checkpoint_await:                                                                                         \
+		if (!co_routine_flag_test((self)->obj.flags, CO_FLAG_CHILD_TERM))
+
+/**
  * Awaits on target and executes following code block it target yielded and still alive
  * @param self Calling coroutine
  * @param target Coroutine object
  * @note Require both self a target same type of non-void rv
  */
 #define for_each_yield_return(self, target)                                                                            \
-	{                                                                                                                  \
-		if_co_yield_await(self, target) {                                                                              \
-			co_pause(self, target);              /* Pause target until we finish */                                    \
-			co_yield_return(self, (target)->rv); /* Return results */                                                  \
-			co_run(self, target);                /* Now target can continue */                                         \
-			(self)->obj.ip =                                                                                           \
-			    &&co_label_checkpoint_await - &&__co_label_start; /* Setup ip to point back to if_co_yield_await */    \
-			co_yield_await_next(self, target);                                                                         \
-		}                                                                                                              \
+	while_co_yield_await(self, target) {                                                                               \
+		co_pause(self, target);                                                                                        \
+		co_yield_return(self, (target)->rv);                                                                           \
+		co_run(self, target);                                                                                          \
 	}
 
 /**
