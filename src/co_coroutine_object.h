@@ -90,8 +90,6 @@ typedef struct co_coroutine_obj {
 	co_ipointer_t ip;
 	/** Bitmap with various co_routine flags */
 	co_routine_flags_bmp_t flags;
-	/** Pointer to a child coroutine */
-	struct co_coroutine_obj *child;
 	/** Pointer to all the coroutines awaiting for current coroutine */
 	co_list_e_t *await;
 

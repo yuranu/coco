@@ -53,7 +53,7 @@
 #define co_routine_ctx_init(fname, wqptr, ...)                                                                         \
 	(struct co_ctx_tname(fname)) {                                                                                     \
 		.obj.wq = wqptr, .obj.flags = co_routine_flags_init(), .obj.func = co_wrapper_fname(fname),                    \
-		.obj.ip = CO_IPOINTER_START, .obj.child = NULL, .obj.await = NULL, .args = {__VA_ARGS__}, .locs = NULL,        \
+		.obj.ip = CO_IPOINTER_START, .obj.await = NULL, .args = {__VA_ARGS__}, .locs = NULL,                           \
 		co_dbg(.obj.func_name = __co_stringify(fname))                                                                 \
 	}
 

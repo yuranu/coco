@@ -25,7 +25,7 @@ void *wake_me_up_in_01_sec(void *p) {
 	return NULL;
 }
 
-co_routine_decl(int, test1, int, x, int, y);
+co_routine_decl(int, test1, int, x, int, y, struct test1_co_obj *, child);
 co_routine_decl(int, test0, int, x, int, y, struct test1_co_obj *, test1);
 
 co_decl_locs(self, test1, pthread_t pt);
@@ -46,8 +46,8 @@ co_yield_rv_t test1(struct test1_co_obj *self) {
 	if (_(x) > 100)
 		co_yield_break();
 	else {
-		self->obj.child = (co_coroutine_obj_t *)co_fork_run(self, test1, 200, 190);
-		for_each_yield_return(self, (struct test1_co_obj *)self->obj.child);
+		_(child) = co_fork_run(self, test1, 200, 190);
+		for_each_yield_return(self, _(child));
 	}
 
 	co_yield_break();

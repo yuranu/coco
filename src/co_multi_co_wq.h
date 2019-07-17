@@ -38,18 +38,13 @@ typedef struct co_multi_co_wq {
 
 	/** Slow input queue - anyone can write here */
 	co_multi_src_q_t inputq;
-	struct {
-		/** Fast allocator - for allocation from coroutine wq thread, can be lockless */
-		co_allocator_t *fast_alloc;
-		/** Slow allocator - for allocation from any thread, must have locks */
-		co_allocator_t *slow_alloc;
-	};
-	struct {
-		/** Execution queue */
-		co_queue_t execq;
-		/** Wait queueu */
-		co_queue_t waitq;
-	};
+	/** Fast allocator - for allocation from coroutine wq thread, can be lockless */
+	co_allocator_t *fast_alloc;
+	/** Slow allocator - for allocation from any thread, must have locks */
+	co_allocator_t *slow_alloc;
+	/** Execution queue */
+	co_queue_t execq;
+
 	/** Indicator to terminate the main loop */
 	co_bool_t terminate;
 } co_multi_co_wq_t;
@@ -88,7 +83,6 @@ static __inline__ co_errno_t co_multi_co_wq_init(co_multi_co_wq_t *wq, co_size_t
 	int rv;
 	*wq = (co_multi_co_wq_t){.bell.wake_me_up = co_atom_init(0),
 	                         .execq           = co_q_init(),
-	                         .waitq           = co_q_init(),
 	                         .fast_alloc      = fast_alloc,
 	                         .slow_alloc      = slow_alloc,
 	                         .terminate       = 0};
@@ -113,7 +107,6 @@ static __inline__ void co_multi_co_wq_destroy(co_multi_co_wq_t *wq) {
 	void *task;
 
 	for_each_drain_queue(task, &wq->execq, co_q_peek, co_q_deq) { co_multi_co_wq_free(wq, task); }
-	for_each_drain_queue(task, &wq->waitq, co_q_peek, co_q_deq) { co_multi_co_wq_free(wq, task); }
 
 	for_each_drain_queue(task, &wq->inputq, co_multi_src_q_peek, co_multi_src_q_deq) { co_multi_co_wq_free(wq, task); }
 
