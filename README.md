@@ -37,6 +37,7 @@ Today many high level languages implement it in one way or another some sort of 
    - Compatible with gnu89 standard (which is used in Linux kernel), i.e. can be used in Kernel.
 3. Schedule co-rotines from regular functions. There is no intent to force special `co_routine_main` function to spaw coroutines. If user wan't to schedule a new coroutine, it shall be possible from ANY context.
 4. Performance is important, BUT not if it comes in expense of the other traits.
+5. Concentrate on assymetric coroutines over symmetric, as they contribute much more to the code clarity.
 
 ## Status
 
@@ -76,13 +77,18 @@ co_yield_rv_t hello(struct hello_co_obj *self) {
     
     _(child) = co_dork_run(self, _(child), 1, 1); /*Start child coroutine*/
     
-    if_co_yield_await(self, _(child)) {
+    while_co_yield_await(self, _(child)) {
         printf("I've got new number: %d\n", _(child)->rv);
+        if (_(child)->rv == 144) {
+            printf("I am feeling tired, lets sleep\n");
+            co_pause(_(child)); /*While asleep, don't let child advance*/
+            co_yield_wait_timeout(self, 1000);
+            co_run(_(child)); /*Ok, now go on*/
+        }
         if (_(child)->rv > 1000) {
             printf("OK, that's big enough for me\n");
             co_yield_break();
         }
-        co_yield_await_next(self, _(child)); /*Continue to the next fibonacci number*/
     }
     
    
