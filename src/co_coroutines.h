@@ -147,8 +147,7 @@
  * @param target Coroutine object pointer to await
  */
 #define co_yield_await(self, target)                                                                                   \
-	(self)->obj.ip = &&co_label_checkpoint_await - &&__co_label_start;                                                 \
-	co_routine_flag_clear(&(self)->obj.flags, CO_FLAG_CHILD_TERM);                                                     \
+	(self)->obj.ip      = &&co_label_checkpoint_await - &&__co_label_start;                                            \
 	(self)->obj.qe.next = (target)->obj.await;                                                                         \
 	(target)->obj.await = &(self)->obj.qe;                                                                             \
 	return CO_RV_YIELD_AWAIT;                                                                                          \
@@ -173,7 +172,7 @@ co_label_checkpoint_await:                                                      
  */
 #define if_co_yield_await(self, target)                                                                                \
 	co_yield_await(self, target);                                                                                      \
-	if (!co_routine_flag_test((self)->obj.flags, CO_FLAG_CHILD_TERM))
+	if (!co_routine_flag_test((target)->obj.flags, CO_FLAG_TERM))
 
 /**
  * Loops while target await returns results
@@ -182,18 +181,16 @@ co_label_checkpoint_await:                                                      
  * @note Damn, this macro is my masterpiece !!!
  */
 #define while_co_yield_await(self, target)                                                                             \
-	co_routine_flag_clear(&(self)->obj.flags, CO_FLAG_CHILD_TERM);                                                     \
 	while (({                                                                                                          \
 		(self)->obj.ip      = &&co_label_checkpoint_await - &&__co_label_start;                                        \
 		(self)->obj.qe.next = (target)->obj.await;                                                                     \
 		(target)->obj.await = &(self)->obj.qe;                                                                         \
-		if (!co_routine_flag_test((self)->obj.flags, CO_FLAG_CHILD_TERM))                                              \
+		if (!co_routine_flag_test((target)->obj.flags, CO_FLAG_TERM))                                                  \
 			return CO_RV_YIELD_AWAIT;                                                                                  \
-		co_routine_flag_clear(&(self)->obj.flags, CO_FLAG_CHILD_TERM); /* This is important to support nested loops */ \
 		0;                                                                                                             \
 	}))                                                                                                                \
 	co_label_checkpoint_await:                                                                                         \
-		if (!co_routine_flag_test((self)->obj.flags, CO_FLAG_CHILD_TERM))
+		if (!co_routine_flag_test((target)->obj.flags, CO_FLAG_TERM))
 
 /**
  * Awaits on target and executes following code block it target yielded and still alive

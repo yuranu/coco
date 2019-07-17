@@ -140,27 +140,26 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 				co_yield_rv_t co_rv;
 
 				co_q_deq(&wq->execq);
+
+				if (co_is_terminated(coroutine)) {
+					co_dbg_trace("Coroutine <%s> is terminated, freeing\n", coroutine->func_name);
+					co_multi_co_wq_free(wq, task); /* Free */
+					break;                         /* Next taks */
+				}
 				co_dbg_trace("Going to call <%s>\n", coroutine->func_name);
 				co_rv = coroutine->func(coroutine);
 				co_dbg_trace("Call result: <%d>\n", co_rv);
 				switch (co_rv) {
 					case CO_RV_YIELD_RETURN:
-						while (coroutine->await) { /* If it is a child coroutine, reschedule its parents. */
-							co_list_e_t *pending = coroutine->await;
-							coroutine->await     = pending->next;
-							co_q_enq(&wq->execq, pending);
-						}
-						co_q_enq(&wq->execq, task); /* Reschedule */
-						goto break_loop;
 					case CO_RV_YIELD_BREAK:
 						while (coroutine->await) { /* If it is a child coroutine, reschedule its parents. */
 							co_list_e_t *pending = coroutine->await;
 							coroutine->await     = pending->next;
 							co_q_enq(&wq->execq, pending);
-							co_routine_flag_set(&__co_container_of(pending, co_coroutine_obj_t, qe)->flags,
-							                    CO_FLAG_CHILD_TERM); /* Notify parents on termination */
 						}
-						co_multi_co_wq_free(wq, task); /* Free */
+						co_q_enq(&wq->execq, task);     /* Reschedule itself */
+						if (co_rv == CO_RV_YIELD_BREAK) /* If needed mark for erase */
+							co_routine_flag_set(&coroutine->flags, CO_FLAG_TERM);
 						goto break_loop;
 					case CO_RV_YIELD_AWAIT:
 						/* Do nothing, not my responsibility now */

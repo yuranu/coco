@@ -56,8 +56,8 @@ typedef enum co_routine_flag {
 	CO_FLAG_READY,
 	/** Corotine object was created by slow allocator */
 	CO_FLAG_SLOW_ALLOC,
-	/** Is set on coroutine awaiting for results if its child exited with yield break */
-	CO_FLAG_CHILD_TERM,
+	/** Is set on coroutine after it terminated, just before it is destroyed, to notify its callers */
+	CO_FLAG_TERM,
 } co_routine_flag_t;
 
 #define co_routine_flags_init() ((co_routine_flags_bmp_t)0)
@@ -100,6 +100,15 @@ typedef struct co_coroutine_obj {
 } co_coroutine_obj_t;
 
 void static __inline__ co_multi_co_wq_ring_the_bell(struct co_multi_co_wq *wq);
+
+/**
+ * Test whether coroutine is terminated
+ * @param co Coroutine object pointer
+ * @return 1 if terminated else 0
+ */
+static __inline__ int co_is_terminated(const co_coroutine_obj_t *co) {
+	return co_routine_flag_test(co->flags, CO_FLAG_TERM);
+}
 
 /**
  * Activate the bell event of coroutine's work queue
