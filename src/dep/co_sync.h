@@ -8,6 +8,7 @@
  */
 
 #include "co_atomics.h"
+#include "co_aux.h"
 #include "co_dbg.h"
 #include "co_types.h"
 #include <pthread.h>
@@ -26,7 +27,7 @@ typedef sem_t co_sem_t;
 static __inline__ co_errno_t co_sem_init(co_sem_t *sem, int size) {
 	int rv = sem_init(sem, 0, 0);
 	rv     = !rv ? 0 : (errno ? errno : EINVAL);
-	return -rv;
+	return rv;
 }
 
 /**
@@ -43,7 +44,7 @@ static __inline__ void co_sem_destroy(co_sem_t *sem) { sem_destroy(sem); }
 static __inline__ co_errno_t co_sem_up(co_sem_t *sem) {
 	int rv = sem_post(sem);
 	rv     = !rv ? 0 : (errno ? errno : EINVAL);
-	return -rv;
+	return rv;
 }
 
 /**
@@ -54,7 +55,7 @@ static __inline__ co_errno_t co_sem_up(co_sem_t *sem) {
 static __inline__ co_errno_t co_sem_down(co_sem_t *sem) {
 	int rv = sem_wait(sem);
 	rv     = !rv ? 0 : (errno ? errno : EINVAL);
-	return -rv;
+	return rv;
 }
 
 /**
@@ -74,10 +75,10 @@ typedef struct co_completion {
  */
 static __inline__ co_errno_t co_completion_init(co_completion_t *comp) {
 	comp->done = 0;
-	int rv     = -pthread_cond_init(&comp->cond, NULL);
+	int rv     = pthread_cond_init(&comp->cond, NULL);
 	if (rv)
 		return rv;
-	rv = -pthread_mutex_init(&comp->mutex, NULL);
+	rv = pthread_mutex_init(&comp->mutex, NULL);
 	if (rv)
 		pthread_cond_destroy(&comp->cond);
 	return rv;
@@ -99,17 +100,38 @@ static __inline__ void co_completion_destroy(co_completion_t *comp) {
  * @return: 0 or error code
  */
 static __inline__ co_errno_t co_completion_wait(co_completion_t *comp) {
-	int rv = -pthread_mutex_lock(&comp->mutex);
+	int rv = pthread_mutex_lock(&comp->mutex);
 	if (rv)
 		return rv;
 	while (!comp->done) {
-		rv = -pthread_cond_wait(&comp->cond, &comp->mutex);
+		rv = pthread_cond_wait(&comp->cond, &comp->mutex);
 		if (rv)
 			return rv;
 	}
 	co_dbg_trace("unset completion\n");
 	comp->done = 0;
-	return -pthread_mutex_unlock(&comp->mutex);
+	return pthread_mutex_unlock(&comp->mutex);
+}
+
+/**
+ * Wait for completion.
+ * @param comp Completion pointer
+ * @return: 0 or error code
+ */
+static __inline__ co_errno_t co_completion_timedwait(co_completion_t *comp, co_abstime_t *until) {
+	int rv = pthread_mutex_lock(&comp->mutex);
+	if (rv)
+		return rv;
+	while (!comp->done && !(!co_is_invalid_abstime(until) && co_time_passed(until))) {
+		if (co_is_invalid_abstime(until))
+			rv = pthread_cond_timedwait(&comp->cond, &comp->mutex, until);
+		else
+			rv = pthread_cond_wait(&comp->cond, &comp->mutex);
+	}
+	co_dbg_trace("unset completion\n");
+	comp->done = 0;
+	pthread_mutex_unlock(&comp->mutex);
+	return rv;
 }
 
 /**
@@ -118,7 +140,7 @@ static __inline__ co_errno_t co_completion_wait(co_completion_t *comp) {
  * @return: 0 or error code
  */
 static __inline__ co_errno_t co_completion_done(co_completion_t *comp) {
-	int rv = -pthread_mutex_lock(&comp->mutex);
+	int rv = pthread_mutex_lock(&comp->mutex);
 	if (rv)
 		return rv;
 	rv = pthread_cond_signal(&comp->cond);
@@ -126,7 +148,7 @@ static __inline__ co_errno_t co_completion_done(co_completion_t *comp) {
 		return rv;
 	co_dbg_trace("set completion\n");
 	comp->done = 1;
-	return -pthread_mutex_unlock(&comp->mutex);
+	return pthread_mutex_unlock(&comp->mutex);
 }
 
 /**

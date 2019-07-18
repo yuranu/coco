@@ -1,5 +1,6 @@
 #include "co_coroutines.h"
 #include "dep/co_primitive_allocator.h"
+#include "dep/co_timeout.h"
 #include <stdio.h>
 #include <unistd.h>
 
@@ -7,10 +8,12 @@
 
 void *wake_me_up_in_1_sec(void *p) {
 	co_coroutine_obj_t *co = (co_coroutine_obj_t *)p;
-
+	printf("Prepare for 1 sec\n");
 	usleep(1000000);
 
 	co_coroutine_obj_ring_the_bell(co);
+
+	printf("Sunshine\n");
 
 	return NULL;
 }
@@ -34,11 +37,17 @@ co_yield_rv_t test1(struct test1_co_obj *self) {
 
 	co_init_locs(self, test1, 0);
 
+	printf("Get ready\n");
+
+	co_yield_wait_timeout(self, 5000000000UL);
+
+	printf("Done\n");
+
 	while (_(x) > _(y)) {
 		--_(x);
 		if (_(x) % 7 == 0) {
 			pthread_create(&self->locs->pt, NULL, wake_me_up_in_1_sec, &self->obj);
-			co_yield_wait(self);
+			co_yield_wait_ready(self);
 		}
 		co_yield_return(self, _(x));
 	}
@@ -74,7 +83,7 @@ co_yield_rv_t test0(struct test0_co_obj *self) {
 		printf("Test 1 returne %d\n", _(test1)->rv);
 		pthread_create(&pt, NULL, wake_me_up_in_1_sec, &self->obj);
 		co_pause(self, _(test1));
-		co_yield_wait(self);
+		co_yield_wait_ready(self);
 		co_run(self, _(test1));
 		printf("Just print\n");
 	}
@@ -92,9 +101,6 @@ int main() {
 	test0co = co_new(&wq, test0, 10, 10, NULL);
 
 	co_schedule(&wq, test0co);
-
-	// co_routine_invoke(test1, &wq, 10, 20);
-	// co_routine_invoke(test2, &wq, 30, 40);
 
 	co_multi_co_wq_loop(&wq);
 

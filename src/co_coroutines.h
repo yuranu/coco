@@ -218,15 +218,21 @@ co_label_checkpoint:                                                            
 	__co_nop() /* Next execution will start from here */
 
 /**
- * Yield coroutine and send it to sleep
+ * Simply yield and wait until called again if ever
  * @param self Calling coroutine
  * @param cond Condition to wait for
- * @todo Implement timeout
  */
-#define co_yield_wait_cond(self, cond, ...)                                                                            \
-	__co_if_empty(__VA_ARGS__, , (self)->obj.rv = __VA_ARGS__);  /* Set rv */                                          \
+#define co_yield_wait(self)                                                                                            \
 	(self)->obj.ip = &&co_label_checkpoint - &&__co_label_start; /* Save return point */                               \
-co_label_checkpoint:                                                                                                   \
+co_label_checkpoint:
+
+/**
+ * Yield coroutine and send it to sleep until a condition is fulfilled
+ * @param self Calling coroutine
+ * @param cond Condition to wait for
+ */
+#define co_yield_wait_cond(self, cond)                                                                                 \
+	co_yield_wait(self);                                                                                               \
 	if (!(cond))                                                                                                       \
 		return CO_RV_YIELD_COND_WAIT;
 
@@ -235,10 +241,10 @@ co_label_checkpoint:                                                            
  * @param self Calling coroutine
  * @param ... Optional return value
  */
-#define co_yield_wait(self, ...)                                                                                       \
+#define co_yield_wait_ready(self)                                                                                      \
 	{                                                                                                                  \
 		co_routine_flag_clear(&(self)->obj.flags, CO_FLAG_READY);                                                      \
-		co_yield_wait_cond(self, co_routine_flag_test((self)->obj.flags, CO_FLAG_READY), ##__VA_ARGS__)                \
+		co_yield_wait_cond(self, co_routine_flag_test((self)->obj.flags, CO_FLAG_READY))                               \
 	}
 
 #define co_ctx_def(rtype, fname, ...)                                                                                  \

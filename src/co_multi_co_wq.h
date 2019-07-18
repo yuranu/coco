@@ -14,6 +14,7 @@
 #include "co_coroutine_object.h"
 #include "co_multi_src_q.h"
 #include "dep/co_allocator.h"
+#include "dep/co_aux.h"
 #include "dep/co_dbg.h"
 #include "dep/co_list.h"
 #include "dep/co_sync.h"
@@ -44,6 +45,9 @@ typedef struct co_multi_co_wq {
 	co_allocator_t *slow_alloc;
 	/** Execution queue */
 	co_queue_t execq;
+
+	/** */
+	co_abstime_t next_wakeup;
 
 	/** Indicator to terminate the main loop */
 	co_bool_t terminate;
@@ -85,7 +89,8 @@ static __inline__ co_errno_t co_multi_co_wq_init(co_multi_co_wq_t *wq, co_size_t
 	                         .execq           = co_q_init(),
 	                         .fast_alloc      = fast_alloc,
 	                         .slow_alloc      = slow_alloc,
-	                         .terminate       = 0};
+	                         .terminate       = 0,
+	                         .next_wakeup     = co_invalid_abstime()};
 	rv  = co_completion_init(&wq->bell.bell);
 	if (rv)
 		return rv;
@@ -194,12 +199,15 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 				/* Go to sleep */
 				co_errno_t err;
 				co_dbg_trace("Work queue <%p> is going to sleep\n", wq);
-				err = co_completion_wait(&wq->bell.bell);
+				err = co_completion_timedwait(&wq->bell.bell, &wq->next_wakeup);
 				(void)err;
-				co_assert(!err || err == -EINTR, "Unexpected error while during completion wait %d\n", err);
+				co_assert(!err || err == EINTR || err == ETIMEDOUT,
+				          "Unexpected error while during completion wait %d\n", err);
 				co_dbg_trace("Work queue <%p> is awake\n", wq);
 				/* Good morning beautiful */
-				b4sleep = 0;
+				if (co_time_passed(&wq->next_wakeup))
+					wq->next_wakeup = co_invalid_abstime();
+				b4sleep         = 0;
 			}
 		} while (0);
 	}
@@ -213,6 +221,16 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 void static __inline__ co_multi_co_wq_ring_the_bell(co_multi_co_wq_t *wq) {
 	if (co_atom_cmpxchg(&wq->bell.wake_me_up, 1, 0) == 1)
 		co_completion_done(&wq->bell.bell);
+}
+
+/**
+ * Set wake up time for main loop
+ * @param co Coroutine work queue pointer
+ * @param wakeup Absolute time to wake up
+ */
+void static __inline __co_adjust_wake_up(co_multi_co_wq_t *wq, const co_abstime_t *wakeup) {
+	if (co_get_time_ge(&wq->next_wakeup, wakeup))
+		wq->next_wakeup = *wakeup;
 }
 
 #endif /*CO_MULTI_CO_WQ_H*/
