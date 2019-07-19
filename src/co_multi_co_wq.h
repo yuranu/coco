@@ -201,7 +201,7 @@ static __inline__ co_errno_t co_multi_co_wq_loop(co_multi_co_wq_t *wq) {
 				co_dbg_trace("Work queue <%p> is going to sleep\n", wq);
 				err = co_completion_timedwait(&wq->bell.bell, &wq->next_wakeup);
 				(void)err;
-				co_assert(!err || err == EINTR || err == ETIMEDOUT,
+				co_assert(!err || err == EINVAL || err == ETIMEDOUT,
 				          "Unexpected error while during completion wait %d\n", err);
 				co_dbg_trace("Work queue <%p> is awake\n", wq);
 				/* Good morning beautiful */
@@ -229,7 +229,7 @@ void static __inline__ co_multi_co_wq_ring_the_bell(co_multi_co_wq_t *wq) {
  * @param wakeup Absolute time to wake up
  */
 void static __inline __co_adjust_wake_up(co_multi_co_wq_t *wq, const co_abstime_t *wakeup) {
-	if (co_get_time_ge(&wq->next_wakeup, wakeup))
+	if (co_is_invalid_abstime(&wq->next_wakeup) || co_get_time_ge(&wq->next_wakeup, wakeup))
 		wq->next_wakeup = *wakeup;
 }
 

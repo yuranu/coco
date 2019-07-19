@@ -134,7 +134,8 @@
  */
 #define co_schedule(_wq, target)                                                                                       \
 	co_assert(_wq == (target)->obj.wq);                                                                                \
-	co_multi_src_q_enq(&(_wq)->inputq, &(target)->obj.qe)
+	co_multi_src_q_enq(&(_wq)->inputq, &(target)->obj.qe);                                                             \
+	co_multi_co_wq_ring_the_bell(_wq)
 
 /**
  * Terminate coroutine execution
@@ -224,6 +225,7 @@ co_label_checkpoint:                                                            
  */
 #define co_yield_wait(self)                                                                                            \
 	(self)->obj.ip = &&co_label_checkpoint - &&__co_label_start; /* Save return point */                               \
+	return CO_RV_YIELD_COND_WAIT;                                                                                      \
 co_label_checkpoint:
 
 /**
@@ -284,30 +286,5 @@ __co_label_start:                                                               
 	/* Coroutine always assumes results not ready, and tries to prove this wrong */                                    \
 	if ((self)->obj.ip != CO_IPOINTER_START)                                                                           \
 		goto *(&&__co_label_start + (self)->obj.ip);
-
-#define __co_decl_locs_struct(__)
-
-/**
- * Define and initialize co-routine local variables.
- * @param self Coroutine self pointer
- * @param fname Coroutine name
- * @param ... List of definitions of form 'type name' for local vars
- * @todo Find a cleaner way. This kinda sucks.
- */
-#define co_decl_locs(self, fname, ...) struct co_locs_tname(fname){__co_foreach(__co_add_semilon, ##__VA_ARGS__)};
-
-/**
- * Init local variables.
- * @param self Coroutine self pointer
- * @param fname Coroutine name
- * @param ... List of initializers
- */
-#define co_init_locs(self, fname, ...)                                                                                 \
-	({                                                                                                                 \
-		(self)->locs = co_multi_co_wq_alloc_fast((self)->obj.wq, sizeof(*(self)->locs));                               \
-		if ((self)->locs)                                                                                              \
-			*(self)->locs = (struct co_locs_tname(fname)){__VA_ARGS__};                                                \
-		(self)->locs;                                                                                                  \
-	})
 
 #endif /*CO_COROUTINES_H*/

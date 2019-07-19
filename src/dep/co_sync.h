@@ -123,7 +123,7 @@ static __inline__ co_errno_t co_completion_timedwait(co_completion_t *comp, co_a
 	if (rv)
 		return rv;
 	while (!comp->done && !(!co_is_invalid_abstime(until) && co_time_passed(until))) {
-		if (co_is_invalid_abstime(until))
+		if (!co_is_invalid_abstime(until))
 			rv = pthread_cond_timedwait(&comp->cond, &comp->mutex, until);
 		else
 			rv = pthread_cond_wait(&comp->cond, &comp->mutex);

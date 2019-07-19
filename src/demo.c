@@ -1,110 +1,119 @@
 #include "co_coroutines.h"
+#include "co_shortcuts.h"
 #include "dep/co_primitive_allocator.h"
 #include "dep/co_timeout.h"
 #include <stdio.h>
 #include <unistd.h>
 
-#define _(x) self->args.x
+/* Sample 1 */
+co_routine_decl(int, fibonacci_producer, int, x, int, y);
+co_routine_decl(/*void*/, fibonacci_printer, struct fibonacci_producer_co_obj *, producer);
 
-void *wake_me_up_in_1_sec(void *p) {
-	co_coroutine_obj_t *co = (co_coroutine_obj_t *)p;
-	printf("Prepare for 1 sec\n");
-	usleep(1000000);
-
-	co_coroutine_obj_ring_the_bell(co);
-
-	printf("Sunshine\n");
-
-	return NULL;
-}
-
-void *wake_me_up_in_01_sec(void *p) {
-	co_coroutine_obj_t *co = (co_coroutine_obj_t *)p;
-
-	usleep(100000);
-
-	co_coroutine_obj_ring_the_bell(co);
-
-	return NULL;
-}
-
-co_routine_decl(int, test1, int, x, int, y, struct test1_co_obj *, child);
-co_routine_decl(int, test0, int, x, int, y, struct test1_co_obj *, test1);
-
-co_decl_locs(self, test1, pthread_t pt);
-co_yield_rv_t test1(struct test1_co_obj *self) {
-	co_routine_begin(self, test1);
-
-	co_init_locs(self, test1, 0);
-
-	printf("Get ready\n");
-
-	co_yield_wait_timeout(self, 5000000000UL);
-
-	printf("Done\n");
-
-	while (_(x) > _(y)) {
-		--_(x);
-		if (_(x) % 7 == 0) {
-			pthread_create(&self->locs->pt, NULL, wake_me_up_in_1_sec, &self->obj);
-			co_yield_wait_ready(self);
-		}
+co_yield_rv_t fibonacci_producer(struct fibonacci_producer_co_obj *self) {
+	co_routine_begin(self, fibonacci_producer);
+	while (1) {
+		_(y) = _(x) + _(y);
+		_(x) = _(y) - _(x);
 		co_yield_return(self, _(x));
 	}
-
-	if (_(x) > 100)
-		co_yield_break();
-	else {
-		_(child) = co_fork_run(self, test1, 200, 190);
-		for_each_yield_return(self, _(child));
-	}
-
 	co_yield_break();
 }
 
-co_yield_rv_t test0(struct test0_co_obj *self) {
-	co_routine_begin(self, test0);
-
-	printf("test0: %d %d\n", _(x), _(y));
-
-	co_yield_return(self, 10);
-
-	self->args.x += 1;
-	self->args.y += 2;
-
-	printf("test0: %d %d\n", _(x), _(y));
-
-	co_yield_return(self, 20);
-
-	_(test1) = co_fork_run(self, test1, .y = 10, .x = 20);
-
-	while_co_yield_await(self, _(test1)) {
-		pthread_t pt;
-		printf("Test 1 returne %d\n", _(test1)->rv);
-		pthread_create(&pt, NULL, wake_me_up_in_1_sec, &self->obj);
-		co_pause(self, _(test1));
-		co_yield_wait_ready(self);
-		co_run(self, _(test1));
-		printf("Just print\n");
+co_yield_rv_t fibonacci_printer(struct fibonacci_printer_co_obj *self) {
+	co_routine_begin(self, fibonacci_printer);
+	_(producer) = co_fork_run(self, fibonacci_producer, 0, 1);
+	while_co_yield_await(self, _(producer)) {
+		printf("Got result from fibonacci producer: %d\n", _(producer)->rv);
+		if (_(producer)->rv > 100) {
+			printf("Got enough fibonacci numbers.\n");
+			break;
+		}
+		co_pause(self, _(producer));
+		co_yield_wait_timeout(self, 1000000000UL);
+		co_run(self, _(producer));
 	}
-
+	co_force_terminate(&_(producer)->obj);
 	co_yield_break();
+}
+
+/* Sample 2 */
+co_routine_decl(const char *, data_source_1, int, i);
+co_routine_decl(const char *, data_source_2, int, i);
+co_routine_decl(const char *, data_collector, struct data_source_1_co_obj *, d1, struct data_source_2_co_obj *, d2);
+co_routine_decl(/*void*/, data_printer, struct data_collector_co_obj *, d);
+
+co_yield_rv_t data_source_1(struct data_source_1_co_obj *self) {
+	char *data[] = {"Hello.", "Is it me", "you're", "looking for?"};
+	co_routine_begin(self, data_source_1);
+	while (_(i) < sizeof(data) / sizeof(*data)) {
+		co_yield_return(self, data[_(i)]);
+		++_(i);
+	}
+	co_yield_break();
+}
+
+co_yield_rv_t data_source_2(struct data_source_2_co_obj *self) {
+	char *data[] = {"Ohhhh", "Mama mia", "Mama mia", "Mama mia", "Let him go!"};
+	co_routine_begin(self, data_source_2);
+	while (_(i) < sizeof(data) / sizeof(*data)) {
+		co_yield_return(self, data[_(i)]);
+		++_(i);
+	}
+	co_yield_break();
+}
+
+co_yield_rv_t data_collector(struct data_collector_co_obj *self) {
+	co_routine_begin(self, data_collector);
+	_(d1) = co_fork_run(self, data_source_1, 0);
+	for_each_yield_return(self, _(d1));
+	_(d2) = co_fork_run(self, data_source_2, 0);
+	for_each_yield_return(self, _(d2));
+	co_yield_break();
+}
+
+co_yield_rv_t data_printer(struct data_printer_co_obj *self) {
+	co_routine_begin(self, data_printer);
+	_(d) = co_fork_run(self, data_collector, 0);
+	while_co_yield_await(self, _(d)) {
+		printf("%s\n", _(d)->rv);
+		co_pause(self, _(d));
+		co_yield_wait_timeout(self, 200000000UL);
+		co_run(self, _(d));
+	}
+	co_yield_break();
+}
+
+void *async_co_scheduler(void *param) {
+	co_multi_co_wq_t *wq = (co_multi_co_wq_t *)param;
+	/* Test: schedule coroutine asynchronously from a separate thread */
+	struct data_printer_co_obj *d;
+	d = co_new(wq, data_printer);
+	usleep(5000000); /* Sleep before schedule to make sure wq is already in the middle of something */
+	printf("Scheduling a new one\n");
+	co_schedule(wq, d);
+	return NULL;
 }
 
 int main() {
 	co_allocator_t a = co_primitive_allocator_init();
 	co_multi_co_wq_t wq;
-	struct test0_co_obj *test0co;
+	struct fibonacci_printer_co_obj *fp;
+	pthread_t sched;
 
 	co_multi_co_wq_init(&wq, 8, &a, &a);
 
-	test0co = co_new(&wq, test0, 10, 10, NULL);
+	fp = co_new(&wq, fibonacci_printer);
 
-	co_schedule(&wq, test0co);
+	pthread_create(&sched, NULL, async_co_scheduler, &wq);
 
+	co_schedule(&wq, fp);
+
+	/* Run the loop */
 	co_multi_co_wq_loop(&wq);
 
+	/* Cleanup */
 	co_multi_co_wq_destroy(&wq);
+	pthread_join(sched, NULL);
 
 	return 0;
 }

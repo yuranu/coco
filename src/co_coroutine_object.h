@@ -109,6 +109,16 @@ static __inline__ int co_is_terminated(const co_coroutine_obj_t *co) {
 }
 
 /**
+ * Force terminate coroutine
+ * @param co Coroutine object pointer
+ * @warning It is forced action, coroutine will not know it is
+ *          going to terminate, so if it had to free resources they will leak.
+ */
+static __inline__ void co_force_terminate(co_coroutine_obj_t *co) {
+	co_routine_flag_set(&co->flags, CO_FLAG_TERM);
+}
+
+/**
  * Activate the bell event of coroutine's work queue
  * @param co Coroutine object pointer
  */
